@@ -18,3 +18,4 @@ and some other things that will exist that happen first, not everything is a tic
 
 - `specs/build-spec.md` — the ticketing queue build spec (verbatim)
 - `specs/architecture.md` — system architecture, flows, process, build phases
+- `ticketing/` — phase 1 event-sourced core (see `specs/architecture.md` §9)

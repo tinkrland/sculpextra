@@ -1,0 +1,15 @@
+{
+  "name": "sculpextra-ticketing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "sculptura support ticketing queue system: phase 1 core",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "rm -rf dist && tsc -p tsconfig.json && node --test dist/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
