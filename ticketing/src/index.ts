@@ -8,3 +8,6 @@ export * from "./priority";
 export * from "./config";
 export * from "./support";
 export * from "./deflection";
+export * from "./routing";
+export * from "./workspace";
+export * from "./responses";

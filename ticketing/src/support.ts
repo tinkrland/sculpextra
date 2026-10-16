@@ -11,6 +11,7 @@ import type {
   RetellLookup,
   SuggestedAnswer,
   SourceChannel,
+  ContentLink,
   Ticket,
   TicketState,
 } from "./types";
@@ -358,8 +359,16 @@ export class SupportService {
   }
 
   // response_sent always moves to waiting_on_user (spec flow: the
-  // agent answers, then the ticket waits).
-  public respond(ticketId: string, actorId: string, body: string, now: string): Ticket {
+  // agent answers, then the ticket waits). responses sent from the
+  // library carry the entry reference and its links in the event
+  // payload, so audit shows exactly which canned answer went out.
+  public respond(
+    ticketId: string,
+    actorId: string,
+    body: string,
+    now: string,
+    meta?: { entry_id: string; links: readonly ContentLink[] },
+  ): Ticket {
     const t = this.mustTicket(ticketId);
     if (!body.trim()) throw new Error("response body required");
     assertTransition(t.state, "waiting_on_user");
@@ -368,7 +377,7 @@ export class SupportService {
       seq,
       type: "response_sent",
       actor: agentActor(actorId),
-      payload: { body },
+      payload: meta ? { body, entry_id: meta.entry_id, links: meta.links } : { body },
       created_at: now,
     }));
     return this.transition(ticketId, "waiting_on_user", actorId, now);
@@ -490,6 +499,12 @@ export class SupportService {
       out.push(...this.ticketLog.list(id));
     }
     return Object.freeze(out);
+  }
+
+  public ticketsOfAgent(agentId: string): readonly Ticket[] {
+    return Object.freeze(
+      [...this.tickets.values()].filter((t) => t.assigned_agent === agentId),
+    );
   }
 
   public ticketsForAccount(accountRef: string): readonly Ticket[] {

@@ -2,7 +2,7 @@
   "name": "sculpextra-ticketing",
   "version": "0.1.0",
   "private": true,
-  "description": "sculptura support ticketing queue system: core + deflection pipeline",
+  "description": "sculptura support ticketing queue system: core, deflection, routing, workspace",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

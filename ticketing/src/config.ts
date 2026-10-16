@@ -24,6 +24,16 @@ export interface CoreConfig {
     // answers requested from retelldb per lookup
     top_k: number;
   };
+  // phase 3: default per-agent concurrency cap per queue, used when
+  // an agent profile does not carry its own cap
+  agent_concurrency: Record<QueueId, number>;
+  // phase 3: the priority curve over minutes open. age only: each
+  // segment scores age_minutes..next segment at per_minute. the
+  // default is the identity curve (one point per minute).
+  priority_curve: readonly { after_minutes: number; per_minute: number }[];
+  // phase 3: hosts that count as doc/kb/academy content links for the
+  // response library. a canned answer must reference at least one.
+  content_link_hosts: readonly string[];
 }
 
 export const DEFAULT_CONFIG: Readonly<CoreConfig> = deepFreeze({
@@ -45,4 +55,12 @@ export const DEFAULT_CONFIG: Readonly<CoreConfig> = deepFreeze({
     enabled: true,
     top_k: 5,
   },
+  agent_concurrency: {
+    buyer: 3,
+    buyer_to_be: 3,
+    creator_support: 2,
+    creator_question: 4,
+  },
+  priority_curve: [{ after_minutes: 0, per_minute: 1 }],
+  content_link_hosts: ["docs.sculptura.com", "kb.sculptura.com", "academy.sculptura.com"],
 });

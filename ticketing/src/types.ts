@@ -71,6 +71,82 @@ export interface DeflectionScreen {
   engine_path: string;
 }
 
+// ---- phase 3: routing, workspace, response library ----
+
+// one (queue, market, language) set an agent works. markets are
+// iso 3166-1 alpha-2, languages bcp-47; routing matches exactly.
+export interface RoutingKey {
+  queue: QueueId;
+  market: string;
+  language: string;
+}
+
+// agent profile (architecture §2): the routing sets the agent
+// handles, an optional own concurrency cap (defaulting to the
+// per-queue config), and senior eligibility for senior queues
+// (phase 4 escalation).
+export interface AgentProfile {
+  id: string;
+  handles: readonly RoutingKey[];
+  concurrency_cap?: number;
+  senior?: boolean;
+}
+
+// the workspace ticket view: read-and-propose panels only, zero
+// money-moving controls. everything here derives from the ticket,
+// its case, and their events; the agent owns what gets sent.
+export interface ContextChip {
+  label: string;
+  detail?: string;
+}
+
+export interface IdentityPanel {
+  account_family: AccountFamily;
+  account_ref: string;
+  market: string;
+  language: string;
+  source_channel: SourceChannel;
+  intent_tag: string;
+  chips: readonly ContextChip[];
+}
+
+export interface DeflectionHistoryItem {
+  what: "lookup" | "offered" | "accepted" | "human_requested";
+  at: string;
+  detail: string;
+}
+
+export interface TicketView {
+  ticket: Ticket;
+  identity: IdentityPanel;
+  order_refs: readonly string[];
+  order_segments: readonly OrderSegmentSnapshot[];
+  payout: PayoutSnapshot | null; // creator_support only
+  deflection_history: readonly DeflectionHistoryItem[];
+  drafts: readonly SuggestedAnswer[]; // retelldb suggestions, drafts only
+  priority: { score: number; age_minutes: number };
+  chain: readonly string[]; // reopen chain, this ticket first
+}
+
+// a canned response. the body may carry free text, but the entry
+// must reference doc/kb/academy content by link: no knowledge lives
+// only in canned responses (spec: workspace). validated on save.
+export interface ResponseLibraryEntry {
+  id: string;
+  queue: QueueId;
+  market?: string; // optional scope; unset means any market
+  language?: string; // optional scope; unset means any language
+  body: string;
+  links: readonly ContentLink[];
+}
+
+export type ContentSource = "doc" | "kb" | "academy";
+
+export interface ContentLink {
+  source: ContentSource;
+  url: string;
+}
+
 export interface OrderSegmentSnapshot {
   segment_id: string;
   shop_sin: string;
