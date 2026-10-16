@@ -21,6 +21,56 @@ export interface GateVerdict {
   detail?: string;
 }
 
+// ---- phase 2: deflection pipeline ----
+
+// one self-serve answer from retelldb: a suggested answer plus the
+// deep link it came from (doc, knowledgebase, or academy content).
+// answers are ordered best-first; the deflection screen shows them
+// in that order.
+export interface SuggestedAnswer {
+  doc_id: string;
+  title: string;
+  snippet: string;
+  url: string;
+}
+
+// what retelldb returns for one lookup. engine_path is retelldb's
+// own retrieval path (tag_traversal, vector_fallback, ...) kept for
+// measurement; it never changes behavior here.
+export interface RetellLookup {
+  answers: readonly SuggestedAnswer[];
+  engine_path: string;
+  latency_ms: number;
+}
+
+// what the lookup asks for: the case text, the market and language
+// (spec: intake), the account family as the audience hint, and the
+// configured top_k.
+export interface LookupRequest {
+  text: string;
+  market: string;
+  language: string;
+  audience_hint: AccountFamily;
+  top_k: number;
+}
+
+// the port to retelldb. the core never speaks http: a channel-adapter
+// implements this interface against the retelldb service and is
+// injected. a null or failing port degrades to straight-to-ticket;
+// deflection availability never blocks reaching a human.
+export interface RetellDbPort {
+  lookup(request: LookupRequest): RetellLookup;
+}
+
+// the deflection screen rendered to the user: the offered answers,
+// in offer order. the screen is the only chance to deflect; the
+// next interaction is either resolved or the single human click.
+export interface DeflectionScreen {
+  case_id: string;
+  answers: readonly SuggestedAnswer[];
+  engine_path: string;
+}
+
 export interface OrderSegmentSnapshot {
   segment_id: string;
   shop_sin: string;

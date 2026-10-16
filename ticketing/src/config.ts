@@ -17,6 +17,13 @@ export interface CoreConfig {
   reopen_window_days: number;
   // first human response targets, minutes, for measurement
   first_response_minutes: Record<QueueId, number>;
+  // phase 2: deflection pipeline. enabled=false (or a null port) is
+  // straight-to-ticket mode, used until deflection content exists.
+  deflection: {
+    enabled: boolean;
+    // answers requested from retelldb per lookup
+    top_k: number;
+  };
 }
 
 export const DEFAULT_CONFIG: Readonly<CoreConfig> = deepFreeze({
@@ -33,5 +40,9 @@ export const DEFAULT_CONFIG: Readonly<CoreConfig> = deepFreeze({
     buyer_to_be: 120,
     creator_support: 480,
     creator_question: 480,
+  },
+  deflection: {
+    enabled: true,
+    top_k: 5,
   },
 });

@@ -3,10 +3,13 @@ import type {
   AssignmentDecision,
   AssignmentInputs,
   Case,
+  DeflectionScreen,
   GateVerdict,
   OrderSegmentSnapshot,
   PayoutSnapshot,
   QueueId,
+  RetellLookup,
+  SuggestedAnswer,
   SourceChannel,
   Ticket,
   TicketState,
@@ -63,6 +66,35 @@ export type ContactOutcome =
   | { kind: "reopened"; case: Case; ticket: Ticket }
   | { kind: "ticketed"; case: Case; ticket: Ticket; rate_limited_chip: boolean };
 
+// phase 2: the outcome of opening a case for deflection. "opened"
+// means the case exists, no merge applied, and the caller may offer
+// deflection and then either deflect or escalate to a human.
+export type OpenedCase =
+  | { kind: "rejected"; reason: string }
+  | { kind: "merged"; case: Case; ticket: Ticket }
+  | {
+      kind: "opened";
+      case: Case;
+      rate_limited_chip: boolean;
+    };
+
+// the outcome of the single human click: the contact either merged
+// into an existing open ticket, reopened a linked chain, or created
+// a fresh ticket.
+export type HumanOutcome =
+  | { kind: "merged"; case: Case; ticket: Ticket; rate_limited_chip: boolean }
+  | { kind: "reopened"; case: Case; ticket: Ticket; rate_limited_chip: boolean }
+  | { kind: "ticketed"; case: Case; ticket: Ticket; rate_limited_chip: boolean };
+
+// intake state held between case creation and the deflection
+// decision. frozen; only an open case with a session can proceed
+// to a ticket via requestHuman.
+interface IntakeSession {
+  input: Readonly<ContactInput>;
+  decision: Readonly<AssignmentDecision>;
+  rate_limited_chip: boolean;
+}
+
 const OPEN_STATES: ReadonlySet<TicketState> = new Set([
   "new",
   "triaged",
@@ -83,104 +115,208 @@ export class SupportService {
   private readonly rateCounts = new Map<string, number>();
   private caseSeq = 0;
   private ticketSeq = 0;
+  // phase 2: cases opened for deflection, awaiting resolve-or-human
+  private readonly sessions = new Map<string, IntakeSession>();
 
   constructor(private readonly config: CoreConfig = DEFAULT_CONFIG) {}
 
   // ---- intake ----
 
   public receiveContact(input: ContactInput, now: string): ContactOutcome {
-    // email eligibility gate runs before a case exists: a failed gate
-    // is an intake rejection, no case is created (spec: intake).
-    if (input.source_channel === "email" && input.email_gate !== "pass") {
-      return {
-        kind: "rejected",
-        reason:
-          input.email_gate === "fail"
-            ? "email eligibility gate failed (themailtell)"
-            : "email eligibility gate not checked",
-      };
-    }
-    assertMarket(input.market);
-    assertLanguage(input.language);
-    if (!input.account_ref) {
-      throw new Error("account ref (bin or cin) required");
-    }
-    if (!input.subject && !input.body) {
-      throw new Error("contact needs a subject or a body");
-    }
-    // fail before a case exists rather than creating an untaggable one
-    if (!isIntentTagForFamily(input.account_family, input.intent_tag)) {
-      throw new AssignmentError(
-        `intent tag "${input.intent_tag}" is not valid for family "${input.account_family}"`,
-      );
-    }
-
-    const c = this.createCase(input, now);
-
-    const decision = assignQueue({
-      account_family: input.account_family,
-      order_attached: input.order_attached,
-      payout_context_present: input.payout_context_present ?? false,
-      intent_tag: input.intent_tag,
-    });
-
-    const tripped = this.rateTripped(input.account_ref, decision.queue, now);
-    if (tripped) {
-      this.caseLog.append(c.id, (seq) => ({
-        case_ref: c.id,
-        seq,
-        type: "rate_limited",
-        actor: system(),
-        payload: {
-          queue: decision.queue,
-          limit: this.config.rate_limits[decision.queue],
-        },
-        created_at: now,
-      }));
-    }
-
-    // duplicate merge: same account + same intent tag within the
-    // window merges into the open ticket. nothing is deleted; the
-    // case stays queryable and the contact appends to the ticket.
+    const opened = this.validateAndOpenCase(input, now);
+    if (opened.kind === "rejected") return opened;
+    const c = opened.case;
     const open = this.findMergeTarget(input.account_ref, input.intent_tag, now);
     if (open) {
-      this.ticketLog.append(open.id, (seq) => ({
-        ticket_ref: open.id,
-        seq,
-        type: "merged_contact",
-        actor: accountActor(input.account_ref),
-        payload: { case_ref: c.id, subject: input.subject },
-        created_at: now,
-      }));
-      const merged = deepFreeze({ ...c, state: "merged" as const, merged_into_ticket: open.id });
-      this.cases.set(merged.id, merged);
-      this.caseLog.append(c.id, (seq) => ({
-        case_ref: c.id,
-        seq,
-        type: "merged",
-        actor: system(),
-        payload: { ticket_ref: open.id },
-        created_at: now,
-      }));
-      return { kind: "merged", case: merged, ticket: open };
+      return { kind: "merged", case: this.mergeContact(c, input, open, now), ticket: open };
     }
-
-    // reopen: a matching ticket closed within the reopen window
-    // produces a linked new ticket inheriting the event history by
-    // reference (workspace renders the chain read-only).
     const closed = this.findReopenTarget(input.account_ref, input.intent_tag, now);
     const ticket = this.createTicket(
       c,
-      decision,
+      opened.decision,
       input,
       now,
       closed?.id ?? null,
-      tripped,
+      opened.tripped,
+      null,
     );
     const stored = this.cases.get(c.id)!;
     return closed
       ? { kind: "reopened", case: stored, ticket }
-      : { kind: "ticketed", case: stored, ticket, rate_limited_chip: tripped };
+      : { kind: "ticketed", case: stored, ticket, rate_limited_chip: opened.tripped };
+  }
+
+  // ---- phase 2: deflection pipeline ----
+
+  // open a case for deflection instead of ticketing it right away.
+  // the same validation, gates, rate-limit and merge rules apply;
+  // the difference is that no ticket is created yet: the caller
+  // offers deflection, then the user's single click decides between
+  // acceptDeflection and requestHuman.
+  public openCase(input: ContactInput, now: string): OpenedCase {
+    const opened = this.validateAndOpenCase(input, now);
+    if (opened.kind === "rejected") return opened;
+    const c = opened.case;
+    const open = this.findMergeTarget(input.account_ref, input.intent_tag, now);
+    if (open) {
+      return { kind: "merged", case: this.mergeContact(c, input, open, now), ticket: open };
+    }
+    this.sessions.set(
+      c.id,
+      deepFreeze(
+        structuredClone({
+          input,
+          decision: opened.decision,
+          rate_limited_chip: opened.tripped,
+        }),
+      ),
+    );
+    return { kind: "opened", case: c, rate_limited_chip: opened.tripped };
+  }
+
+  // log a retelldb lookup result. the answers and their order are
+  // the event-sourced record of what deflection could offer.
+  public logLookup(caseId: string, lookup: RetellLookup, now: string): void {
+    this.mustOpenSession(caseId);
+    this.caseLog.append(caseId, (seq) => ({
+      case_ref: caseId,
+      seq,
+      type: "lookup_result",
+      actor: system(),
+      payload: {
+        answers: lookup.answers,
+        engine_path: lookup.engine_path,
+        latency_ms: lookup.latency_ms,
+      },
+      created_at: now,
+    }));
+  }
+
+  // offer the deflection screen: what was offered, in what order,
+  // built from the logged lookup (the log is the record). returns
+  // the frozen screen for the caller to render. offering is only
+  // meaningful with answers to show: an empty lookup goes straight
+  // to a ticket and never reaches this.
+  public offerDeflection(caseId: string, now: string): DeflectionScreen {
+    this.mustOpenSession(caseId);
+    const events = this.caseLog.list(caseId);
+    const lookupEvent = [...events].reverse().find((e) => e.type === "lookup_result");
+    if (!lookupEvent) {
+      throw new Error(`case ${caseId} has no lookup to offer`);
+    }
+    const p = lookupEvent.payload as {
+      answers?: readonly SuggestedAnswer[];
+      engine_path?: string;
+    };
+    const answers = [...(p.answers ?? [])];
+    if (answers.length === 0) {
+      throw new Error(`case ${caseId} lookup has no answers to offer`);
+    }
+    this.caseLog.append(caseId, (seq) => ({
+      case_ref: caseId,
+      seq,
+      type: "deflection_offered",
+      actor: system(),
+      payload: {
+        offered: answers.map((a) => a.doc_id),
+        engine_path: p.engine_path ?? "unknown",
+      },
+      created_at: now,
+    }));
+    return deepFreeze(
+      structuredClone({
+        case_id: caseId,
+        answers,
+        engine_path: p.engine_path ?? "unknown",
+      }),
+    );
+  }
+
+  // log a failed lookup without offering a screen. the caller then
+  // goes straight to a ticket: lookup availability never blocks a
+  // human.
+  public logLookupFailure(caseId: string, error: string, now: string): void {
+    this.mustOpenSession(caseId);
+    this.caseLog.append(caseId, (seq) => ({
+      case_ref: caseId,
+      seq,
+      type: "lookup_result",
+      actor: system(),
+      payload: { error, answers: [] },
+      created_at: now,
+    }));
+  }
+
+  // the user marked the offered answers as resolving the case. no
+  // ticket is ever created for an accepted deflection.
+  public acceptDeflection(caseId: string, now: string): Case {
+    const c = this.mustOpenCase(caseId);
+    this.caseLog.append(caseId, (seq) => ({
+      case_ref: caseId,
+      seq,
+      type: "deflection_accepted",
+      actor: accountActor(c.account_ref),
+      payload: {},
+      created_at: now,
+    }));
+    const deflected = deepFreeze({ ...c, state: "deflected" as const });
+    this.cases.set(caseId, deflected);
+    this.sessions.delete(caseId);
+    return deflected;
+  }
+
+  // the single "still need a human" click. this and nothing else
+  // creates the ticket from a deflected intake: exactly one
+  // explicit click reaches a human, never a second confirm step.
+  // merge and reopen targets are re-evaluated at click time, since
+  // another contact of the same account may have ticketed in
+  // between.
+  public requestHuman(caseId: string, now: string): HumanOutcome {
+    const session = this.mustOpenSession(caseId);
+    const c = this.cases.get(caseId)!;
+    this.caseLog.append(caseId, (seq) => ({
+      case_ref: caseId,
+      seq,
+      type: "human_requested",
+      actor: accountActor(c.account_ref),
+      payload: {},
+      created_at: now,
+    }));
+
+    const open = this.findMergeTarget(
+      session.input.account_ref,
+      session.input.intent_tag,
+      now,
+    );
+    if (open) {
+      this.sessions.delete(caseId);
+      return {
+        kind: "merged",
+        case: this.mergeContact(c, session.input as ContactInput, open, now),
+        ticket: open,
+        rate_limited_chip: session.rate_limited_chip,
+      };
+    }
+
+    const closed = this.findReopenTarget(
+      session.input.account_ref,
+      session.input.intent_tag,
+      now,
+    );
+    const ticket = this.createTicket(
+      c,
+      session.decision as AssignmentDecision,
+      session.input as ContactInput,
+      now,
+      closed?.id ?? null,
+      session.rate_limited_chip,
+      this.summarizeDeflection(caseId),
+    );
+    this.sessions.delete(caseId);
+    const stored = this.cases.get(caseId)!;
+    return closed
+      ? { kind: "reopened", case: stored, ticket, rate_limited_chip: session.rate_limited_chip }
+      : { kind: "ticketed", case: stored, ticket, rate_limited_chip: session.rate_limited_chip };
   }
 
   // ---- ticket lifecycle ----
@@ -377,6 +513,136 @@ export class SupportService {
 
   // ---- internals ----
 
+  // shared intake for receiveContact (phase 1, straight to ticket)
+  // and openCase (phase 2, deflection): email gate, validation,
+  // case creation, queue decision, rate-limit event.
+  private validateAndOpenCase(
+    input: ContactInput,
+    now: string,
+  ):
+    | { kind: "rejected"; reason: string }
+    | {
+        kind: "validated";
+        case: Case;
+        decision: AssignmentDecision;
+        tripped: boolean;
+      } {
+    // email eligibility gate runs before a case exists: a failed gate
+    // is an intake rejection, no case is created (spec: intake).
+    if (input.source_channel === "email" && input.email_gate !== "pass") {
+      return {
+        kind: "rejected",
+        reason:
+          input.email_gate === "fail"
+            ? "email eligibility gate failed (themailtell)"
+            : "email eligibility gate not checked",
+      };
+    }
+    assertMarket(input.market);
+    assertLanguage(input.language);
+    if (!input.account_ref) {
+      throw new Error("account ref (bin or cin) required");
+    }
+    if (!input.subject && !input.body) {
+      throw new Error("contact needs a subject or a body");
+    }
+    // fail before a case exists rather than creating an untaggable one
+    if (!isIntentTagForFamily(input.account_family, input.intent_tag)) {
+      throw new AssignmentError(
+        `intent tag "${input.intent_tag}" is not valid for family "${input.account_family}"`,
+      );
+    }
+
+    const c = this.createCase(input, now);
+    const decision = assignQueue({
+      account_family: input.account_family,
+      order_attached: input.order_attached,
+      payout_context_present: input.payout_context_present ?? false,
+      intent_tag: input.intent_tag,
+    });
+    const tripped = this.rateTripped(input.account_ref, decision.queue, now);
+    if (tripped) {
+      this.caseLog.append(c.id, (seq) => ({
+        case_ref: c.id,
+        seq,
+        type: "rate_limited",
+        actor: system(),
+        payload: {
+          queue: decision.queue,
+          limit: this.config.rate_limits[decision.queue],
+        },
+        created_at: now,
+      }));
+    }
+    return { kind: "validated", case: c, decision, tripped };
+  }
+
+  // duplicate merge: same account + same intent tag within the
+  // window merges into the open ticket. nothing is deleted; the
+  // case stays queryable and the contact appends to the ticket.
+  private mergeContact(c: Case, input: ContactInput, open: Ticket, now: string): Case {
+    this.ticketLog.append(open.id, (seq) => ({
+      ticket_ref: open.id,
+      seq,
+      type: "merged_contact",
+      actor: accountActor(input.account_ref),
+      payload: { case_ref: c.id, subject: input.subject },
+      created_at: now,
+    }));
+    const merged = deepFreeze({ ...c, state: "merged" as const, merged_into_ticket: open.id });
+    this.cases.set(merged.id, merged);
+    this.caseLog.append(c.id, (seq) => ({
+      case_ref: c.id,
+      seq,
+      type: "merged",
+      actor: system(),
+      payload: { ticket_ref: open.id },
+      created_at: now,
+    }));
+    return merged;
+  }
+
+  // a case can only be offered deflection or escalated to a human
+  // while it is open with a pending intake session. anything else
+  // (deflected, ticketed, merged, unknown) fails loudly.
+  private mustOpenSession(caseId: string): IntakeSession {
+    const session = this.sessions.get(caseId);
+    const c = this.cases.get(caseId);
+    if (!session || !c || c.state !== "open") {
+      throw new Error(`case ${caseId} is not an open deflection case`);
+    }
+    return session;
+  }
+
+  private mustOpenCase(caseId: string): Case {
+    const c = this.cases.get(caseId);
+    if (!c || c.state !== "open" || !this.sessions.has(caseId)) {
+      throw new Error(`case ${caseId} is not an open deflection case`);
+    }
+    return c;
+  }
+
+  // compact deflection history summary for the ticket, built only
+  // from the case's own event log (spec: ticket fields).
+  private summarizeDeflection(caseId: string): string {
+    const events = this.caseLog.list(caseId);
+    const lookup = events.find((e) => e.type === "lookup_result");
+    if (!lookup) return "no deflection attempted";
+    const p = lookup.payload as {
+      answers?: readonly unknown[];
+      engine_path?: string;
+      error?: string;
+    };
+    if (p.error) return `lookup failed (${p.error}); straight to ticket`;
+    const n = (p.answers ?? []).length;
+    const path = p.engine_path ?? "unknown";
+    const offered = events.some((e) => e.type === "deflection_offered");
+    if (n === 0) return "lookup returned no answers; straight to ticket";
+    return offered
+      ? `lookup ${n} answers (${path}); offered; human requested`
+      : `lookup ${n} answers (${path}); not offered; human requested`;
+  }
+
   private createCase(input: ContactInput, now: string): Case {
     const id = `case_${++this.caseSeq}`;
     const c: Case = deepFreeze({
@@ -431,6 +697,7 @@ export class SupportService {
     now: string,
     reopenedFrom: string | null,
     tripped: boolean,
+    deflectionSummary: string | null,
   ): Ticket {
     if (input.payout_snapshot && decision.queue !== "creator_support") {
       throw new Error("payout snapshot is creator_support only");
@@ -448,7 +715,7 @@ export class SupportService {
       payout_snapshot: input.payout_snapshot
         ? deepFreeze({ ...input.payout_snapshot })
         : null,
-      deflection_summary: null, // phase 2
+      deflection_summary: deflectionSummary,
       assigned_agent: null,
       rate_limited_chip: tripped,
       reopened_from: reopenedFrom,

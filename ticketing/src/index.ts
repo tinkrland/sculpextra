@@ -7,3 +7,4 @@ export * from "./assign";
 export * from "./priority";
 export * from "./config";
 export * from "./support";
+export * from "./deflection";
