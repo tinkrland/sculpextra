@@ -36,6 +36,12 @@ work. it is deliberately NOT:
   reversible, or decided), but repeat-infringer consequences fire
   only from the signed enforcement ladder (§11), never from a
   dispute state directly.
+- **blind to question traffic.** some people arriving at the claim
+  form just have a question (how licensing works, what provenance
+  means, whether they should file at all). a question is not a
+  claim, the same way the ticketing spec keeps buyer-to-be
+  questions out of the buyer issue queue: questions get the
+  inquiry path (§5.1), never a claim record.
 - **legal counsel.** the dmca-shaped workflow is statute-sized and
   parameterized; counsel confirms posture on every escalated claim.
   no output of this system is legal advice.
@@ -44,10 +50,16 @@ work. it is deliberately NOT:
 
 ```
  public web ──┐            ┌────────────────────────────────────┐
- (no login)  │            │  intake service                     │
-             └───────────►│  educational screen → completeness  │
-                          │  gate → bounce-once or claim record │
-                          └───────────────┬────────────────────┘
+ (no login)  │            │  entry fork: question or claim?      │
+             └───────────►└──────┬───────────────────┬──────────┘
+                             question │           claim │
+                     ┌───────────────▼──┐   ┌────────▼─────────────────────┐
+                     │ inquiry path      │   │  intake service               │
+                     │ public content    │   │  educational screen →         │
+                     │ deflection, one   │   │  completeness gate → bounce-  │
+                     │ public-questions  │   │  once or claim record         │
+                     │ queue for the rest│   └───────────────┬────────────────┘
+                     └───────────────────┘                   │
                                           │ claim (append-only events)
                           ┌───────────────▼────────────────────┐
                           │  evidence assembly (on demand)       │
@@ -164,9 +176,17 @@ record carries created_at/updated_at.
 ### ReviewerHours
 - reviewer id, claim ref, date, hours — the support-cost export input
 
+### Inquiry (question path only, never a claim)
+- id, contact (optional), question text, locale, search refs used
+- state (new → answered → closed), answer refs (content links or a
+  human reply), closed_at
+- retained under the same consent rules as claims; aggregate search
+  terms feed measurement, never claimant registries
+
 ## 5. intake branch
 
-deflection discipline applied to accusers:
+the public entry is a fork, not a form (§5.1). past the fork,
+deflection discipline applies to accusers:
 
 - **educational screen before the form** (the deflection analog):
   the claim form opens with the naming discipline (infringement vs
@@ -189,6 +209,33 @@ deflection discipline applied to accusers:
   as chips, never a routing input. an unreachable contact channel
   is a bounce reason (the claimant could not be notified), not a
   rejection of the claim's merits.
+### 5.1 question fork (a question is not a claim)
+
+mirroring the ticketing discipline that a question queue is not an
+issue queue (buyer-to-be vs buyer; creator question vs creator
+support), the claim entry opens with the fork before any form field:
+
+- **inquiry path**: the asker searches the same public content the
+  platform already maintains (kb, docs, academy, the provenance
+  explanation — the deflection machinery, not a rebuilt one; the
+  response library's link-validation discipline applies to every
+  canned answer). contact is optional until a human reply is
+  needed. no account is ever required here either.
+- **unresolved questions**: one public-questions queue, answered by
+  a human through the contact channel the asker provided, closed as
+  answered. there is exactly one such queue and it never produces
+  claim records, provisional measures, or registry entries.
+- **question that is really a claim**: the answer hands the asker
+  the claim form; nothing auto-files.
+- **claim that is really a question**: the reviewer reclassifies
+  with a logged event — the item closes as `closed_referred` with
+  the referral link attached. a reclassification is not a merits
+  decision: it never counts in the substantiation rate and never
+  fires enforcement events.
+- the inquiry path borrows the ticketing deflection machinery
+  (retelldb lookup over public content, one-click escalation to the
+  human queue) rather than inventing a second deflector.
+
 - **rate limits**: per-claimant-contact per day, config-driven;
   trips log an event and are visible to reviewers. registry entries
   tighten limits per policy (§12), never block filing outright.
@@ -293,6 +340,11 @@ outcomes are per item, each a signed DecisionRecord:
 - **withdrawn**: the claimant may withdraw any item or the whole
   claim at any time; withdrawal is logged, never treated as
   bad-faith evidence by itself.
+- **referred (reclassification)**: a claim that is actually a
+  question closes as closed_referred with the answer link attached;
+  no merits decision, no substantiation-rate entry, no enforcement
+  event. reclassification is logged with the reviewer's signature
+  like every state change.
 - **reopen**: within 30 days, a reopened claim links to its history
   (same chain discipline as ticketing); after that, new evidence
   files a new claim linked to the old.
@@ -375,6 +427,8 @@ under_review → provisional_action_logged → decided → rejected_restored →
                                                → upheld_delisted → closed
                                                → escalated_counsel ↘
                                      (clock paused)  counsel_return → decided
+under_review → closed_referred   (reclassification: a question, not a claim;
+                                  no merits decision, no enforcement)
 counter-notice overlay (item level, delist default):
   upheld_pending_counter → counter_notice_filed → restore_window → restored_after_counter_notice
                                                                     → closed
@@ -397,7 +451,8 @@ counter_notice_filed, restore_window_started,
 restored_after_counter_notice, decision_recorded (signed),
 escalated_counsel, counsel_clock_paused, counsel_clock_resumed,
 enforcement_step_signed, registry_entry_added,
-registry_entry_removed, claim_reopened, claim_closed,
+registry_entry_removed, claim_reopened, claim_closed, claim_reclassified_question,
+question_asked, question_deflected, question_answered, question_closed,
 retention_expired.
 
 ## 17. measurement (from events only)
@@ -416,6 +471,10 @@ no separate tracking pipeline to drift out of sync:
 - bounce rate, resubmission completion rate (is the bounce
   understandable?), provenance-shortcut share (claims resolved by
   the shortcut), type-correction rate
+- question traffic: share of public entries that fork to a
+  question, inquiry deflection rate (answered by content, never
+  reaching the human queue), reclassification rate in both
+  directions (is the fork legible?)
 
 ## 18. edge cases (each a branch, each tested)
 
@@ -439,12 +498,21 @@ no separate tracking pipeline to drift out of sync:
 - **statute drift**: restore windows and dmca elements are config
   versioned; a statute bump is a config change + counsel review, not
   a code change.
+- **question at the claim gate**: an asker past the fork who is
+  really asking a question gets reclassified, referred, and answered
+  — never bounced through the completeness gate to force claim
+  fields they do not have.
+- **claimant refuses contact but wants an answer**: the inquiry path
+  is the only part of the system where contact is optional; claims
+  always require it (a decision must be deliverable).
 
 ## 19. build phases
 
 1. **core.** claim + item + event schemas, state machine,
    completeness gate, bounce-exactly-once, account-free intake,
-   contact gate, rate limits, duplicate merge.
+   the question fork (inquiry records, public-content deflection,
+   the single public-questions queue), contact gate, rate limits,
+   duplicate merge.
 2. **evidence.** ports: similarity report, release history,
    provenance lookup, chain of title, watermark trace; artifact
    attachment; the provenance shortcut decision path.
@@ -486,3 +554,11 @@ signed human.
    refile; refile pauses the clock and moves the item to counsel.
 10. registry entries require a signed human action citing policy
     (test: no event path creates one automatically).
+11. a question never creates a claim record: the inquiry path
+    produces inquiry events only, and no inquiry event can
+    trigger a provisional measure, a decision, or a registry entry
+    (test: enumerate event handlers against inquiry events).
+12. a claim reclassified as a question closes as closed_referred
+    with the referral link attached, excluded from the
+    substantiation rate, and fires no enforcement event (test
+    explicitly).

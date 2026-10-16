@@ -22,7 +22,8 @@ and some other things that will exist that happen first, not everything is a tic
   dispute build spec (verbatim)
 - `specs/dispute-architecture.md` — dispute architecture, flows,
   process, build phases; companion system to ticketing (external
-  claims only; platform-artist theft stays paracraft-side)
+  claims only; platform-artist theft stays paracraft-side; the
+  public entry forks question vs claim — a question is not a claim)
 - `ticketing/` — phases 1-4: event-sourced core, intake with the
   deflection pipeline (retelldb lookup, deflection screen, one-click
   human handoff), routing (round-robin over agent routing sets with
