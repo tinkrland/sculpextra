@@ -18,6 +18,11 @@ and some other things that will exist that happen first, not everything is a tic
 
 - `specs/build-spec.md` — the ticketing queue build spec (verbatim)
 - `specs/architecture.md` — system architecture, flows, process, build phases
+- `specs/dispute-build-spec.md` — the outside-artist art-theft
+  dispute build spec (verbatim)
+- `specs/dispute-architecture.md` — dispute architecture, flows,
+  process, build phases; companion system to ticketing (external
+  claims only; platform-artist theft stays paracraft-side)
 - `ticketing/` — phases 1-4: event-sourced core, intake with the
   deflection pipeline (retelldb lookup, deflection screen, one-click
   human handoff), routing (round-robin over agent routing sets with
