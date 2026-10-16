@@ -13,3 +13,8 @@ and some other things that will exist that happen first, not everything is a tic
 - knowledgebase
 - sculptura academy (basically how-to's / learning specific stuff form of written + image content)
 - retelldb (trained on all of the above + customer side too)
+
+## docs
+
+- `specs/build-spec.md` — the ticketing queue build spec (verbatim)
+- `specs/architecture.md` — system architecture, flows, process, build phases
