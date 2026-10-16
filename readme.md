@@ -9,6 +9,10 @@ the queues — support issue, question, bug report (receipt + signal to
 the engineering tracker), vulnerability disclosure (the sensitive lane,
 own channel, access-restricted), feature request (receipt + signal to
 the product backlog). only issues and questions ever become tickets.
+kind is family-orthogonal (creators and buyers both have questions and
+issues), and issues carry a subject — what they are wrt: creators
+payouts, idv, listing/release, fulfillment, account; buyers order,
+checkout, account.
 - buyer queue (has already purchased)
 - buyer-to-be queue (facing issues placing an order)
 - creator queue (support) vs creator queue (question)

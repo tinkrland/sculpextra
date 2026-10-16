@@ -162,11 +162,44 @@ buyer:
 creator:
 - `payout_issue`, `listing_release_problem`, `order_fulfillment`,
   `refund_dispute` (money-adjacent)
+- `idv_pending`, `idv_rejected` (identity verification: idv gates
+  payouts, so idv issues sit beside payout issues in creator_support
+  but keep their own subject — a "payout failed" ticket that is
+  really an idv hold becomes measurable instead of confounded)
 - `how_to`, `clarification`
+- `account_access`, `other`
+
+buyer:
+- `where_is_it`, `refund_request`, `quality_issue`, `manufacturer_delay`
+  (post-purchase; expect an order attached)
+- `checkout_failure`, `payment_declined`, `address_rejected`,
+  `listing_question` (pre-purchase)
 - `account_access`, `other`
 
 free intake maps to exactly one tag; unmappable goes to `other` and
 triage re-tags. re-taging emits an event (input to misrate accounting).
+
+### 3.0 two axes: kind (both families) and subject (issues)
+
+owner ruling 2026-10-16: creators and buyers can both have questions
+or issues. kind is a family-orthogonal axis logged at intake for
+every contact; subject records what an issue is with respect to.
+
+- **kind**: `question` | `issue` (plus the non-ticket kinds of §3.1).
+  both families carry both kinds — the creator family realizes the
+  split at queue level (creator_support vs creator_question); buyers
+  realize it as a logged axis (routing stays attachment-based by
+  design) that drives SLA targets and workspace treatment:
+  questions get question-target response times and no
+  order/escrow/payout panels, issues get the issue-target SLA.
+- **subject** (issues only): creator subjects — `payout`, `idv`,
+  `listing_release`, `fulfillment`, `account`, `other`; buyer
+  subjects — `order`, `checkout`, `account`, `other`. subject is
+  derived from the intent tag at assignment, recorded on the
+  assignment event, and never changes routing on its own: it is a
+  measurement and workspace axis, so the payout/idv confound and
+  the subject mix per queue become visible without touching the
+  pure function.
 
 ### 3.1 contact kinds (the fork before the queues)
 
@@ -249,9 +282,15 @@ notes:
 - `payout_context_present` is a boolean captured at intake (contact
   mentions a payout/shop money matter), stored, logged. it is an input,
   not a lookup the function performs.
-- the assignment event on the ticket records all three inputs plus the
-  output. any later queue change (triage correction, escalation) is its
-  own event, so misroute rate per intent tag is measurable.
+- the assignment event on the ticket records all inputs plus
+  the output: (family, order_attached, kind, intent_tag) → queue,
+  with the derived subject. any later queue change (triage
+  correction, escalation) is its own event, so misroute rate per
+  intent tag is measurable.
+- kind never changes buyer routing (attachment stays the only buyer
+  split); kind changes creator routing only through the
+  question/issue queue pair that already exists. buyer questions
+  surface kind to SLA config and the workspace, never to a queue.
 
 ## 5. state machine
 
@@ -358,8 +397,11 @@ moderation ref for later joining.
 - misroute rate: queue re-assignment events / total tickets, by intent
   tag. the assignment log makes this exact.
 - contact-kind share and kind-correction rate (is the fork legible?);
-  bug reports filed vs. received; disclosure ack time; feature-request
-  duplicate demand. all from kind events only.
+  question vs issue share per queue (both families); subject mix per
+  issue queue; the payout/idv confound rate (payout-subject tickets
+  re-tagged to idv and back). bug reports filed vs. received;
+  disclosure ack time; feature-request duplicate demand. all from
+  kind + assignment events only.
 - duplicate merge rate, rate-limit trips per account (abuse signal to
   moderation if patterned), burst-window latency vs normal.
 
