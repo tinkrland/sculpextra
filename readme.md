@@ -18,10 +18,13 @@ and some other things that will exist that happen first, not everything is a tic
 
 - `specs/build-spec.md` — the ticketing queue build spec (verbatim)
 - `specs/architecture.md` — system architecture, flows, process, build phases
-- `ticketing/` — phases 1-3: event-sourced core, intake with the
+- `ticketing/` — phases 1-4: event-sourced core, intake with the
   deflection pipeline (retelldb lookup, deflection screen, one-click
   human handoff), routing (round-robin over agent routing sets with
   per-agent concurrency caps, age-only priority curve), the agent
   workspace view (identity/order/payout/deflection panels, retelldb
-  drafts), and the link-validated response library
+  drafts), the link-validated response library, and the proposal
+  bridge (per-order refund proposals and payout investigations to the
+  payments system, results posted back as ticket events) plus abuse
+  signals to moderation (signals, never verdicts)
   (see `specs/architecture.md` §9)

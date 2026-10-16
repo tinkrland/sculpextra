@@ -11,3 +11,5 @@ export * from "./deflection";
 export * from "./routing";
 export * from "./workspace";
 export * from "./responses";
+export * from "./proposals";
+export * from "./signals";

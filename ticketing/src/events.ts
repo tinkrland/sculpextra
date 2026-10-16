@@ -31,9 +31,10 @@ export type TicketEventType =
   | "escalated"
   | "reopened"
   | "closed"
-  // phase 4, proposal bridge:
+  // phase 4, proposal bridge + abuse signal:
   | "proposal_created"
-  | "proposal_result";
+  | "proposal_result"
+  | "abuse_report_filed";
 
 export interface CaseEvent {
   case_ref: string;

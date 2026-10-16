@@ -126,6 +126,27 @@ export interface TicketView {
   drafts: readonly SuggestedAnswer[]; // retelldb suggestions, drafts only
   priority: { score: number; age_minutes: number };
   chain: readonly string[]; // reopen chain, this ticket first
+  // phase 4, read-only panels: proposals and their results (the
+  // workspace shows them; it never executes them), and filed abuse
+  // signals with their moderation refs for later joining.
+  proposals: readonly ProposalView[];
+  abuse_reports: readonly AbuseReportView[];
+}
+
+export interface ProposalView {
+  id: string;
+  kind: "refund" | "payout_investigation";
+  order_refs: readonly string[];
+  amount_cents: number;
+  reason: string;
+  status: "proposed" | "executed" | "rejected";
+  result?: { by: string; payment_ref?: string; detail?: string };
+}
+
+export interface AbuseReportView {
+  report_id: string;
+  category: string;
+  moderation_ref: string;
 }
 
 // a canned response. the body may carry free text, but the entry
@@ -145,6 +166,57 @@ export type ContentSource = "doc" | "kb" | "academy";
 export interface ContentLink {
   source: ContentSource;
   url: string;
+}
+
+// ---- phase 4: proposal bridge + abuse signal ----
+
+// support proposes; payments executes. amounts are integer cents,
+// reasons are mandatory, and refund proposals carry order refs by
+// construction so refunds stay per-order, never cart-wide.
+export type ProposalKind = "refund" | "payout_investigation";
+
+export interface MoneyProposal {
+  id: string;
+  ticket_ref: string;
+  kind: ProposalKind;
+  order_refs: readonly string[]; // refund: per-order, subset of the ticket's
+  amount_cents: number; // refund only; payout investigations propose no amount
+  reason: string;
+  status: "proposed" | "executed" | "rejected";
+  created_at: string;
+}
+
+export interface ProposalResult {
+  status: "executed" | "rejected";
+  by: string; // the payments system actor, e.g. "payments"
+  payment_ref?: string; // executed movements carry a reference
+  detail?: string;
+}
+
+// the payments system behind an adapter. the bridge submits here;
+// the payments system executes (or rejects) and the result posts
+// back as a proposal_result ticket event. no money moves in the
+// workspace, ever.
+export interface PaymentsPort {
+  submitRefund(proposal: MoneyProposal): void;
+  submitPayoutInvestigation(proposal: MoneyProposal): void;
+}
+
+// an abuse report is a signal, never a verdict. support files it;
+// moderation owns every decision. the report links the moderation
+// ref so later joins stay exact.
+export interface AbuseSignal {
+  source_ticket: string;
+  account_family: AccountFamily;
+  account_ref: string;
+  category: string;
+  evidence_refs: readonly string[];
+  reported_at: string;
+}
+
+export interface ModerationPort {
+  // returns the moderation-side reference for later joining
+  fileSignal(signal: AbuseSignal): string;
 }
 
 export interface OrderSegmentSnapshot {

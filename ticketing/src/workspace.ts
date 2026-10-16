@@ -74,6 +74,7 @@ export function buildTicketView(
   // drafts: the last lookup's answers, in offer order. drafts only.
   const drafts = lastDrafts(caseEvents);
 
+  const ticketEvents = support.ticketEvents(t.id);
   return deepFreeze(
     structuredClone({
       ticket: t,
@@ -83,6 +84,8 @@ export function buildTicketView(
       payout: t.payout_snapshot,
       deflection_history: history,
       drafts,
+      proposals: proposalViews(ticketEvents),
+      abuse_reports: abuseViews(ticketEvents),
       priority: {
         score: priorityScore(t.created_at, now, config.priority_curve as readonly PriorityCurveSegment[]),
         age_minutes: Math.max(0, (Date.parse(now) - Date.parse(t.created_at)) / 60_000),
@@ -125,6 +128,53 @@ function lastDrafts(caseEvents: readonly { type: string; payload: unknown }[]): 
   }
   return [];
 }
+
+function proposalViews(
+  ticketEvents: readonly { type: string; payload: unknown }[],
+): ProposalViewLike[] {
+  const views = new Map<string, ProposalViewLike>();
+  for (const e of ticketEvents) {
+    if (e.type === "proposal_created") {
+      const p = e.payload as ProposalViewLike;
+      views.set(p.id, { ...p, status: "proposed" });
+    } else if (e.type === "proposal_result") {
+      const p = e.payload as { proposal_id: string; status: string; by: string; payment_ref?: string; detail?: string };
+      const current = views.get(p.proposal_id);
+      if (current) {
+        views.set(p.proposal_id, {
+          ...current,
+          status: p.status as ProposalViewLike["status"],
+          result: { by: p.by, payment_ref: p.payment_ref, detail: p.detail },
+        });
+      }
+    }
+  }
+  return [...views.values()];
+}
+
+function abuseViews(
+  ticketEvents: readonly { type: string; payload: unknown }[],
+): AbuseReportViewLike[] {
+  const out: AbuseReportViewLike[] = [];
+  for (const e of ticketEvents) {
+    if (e.type !== "abuse_report_filed") continue;
+    const p = e.payload as AbuseReportViewLike;
+    out.push({ report_id: p.report_id, category: p.category, moderation_ref: p.moderation_ref });
+  }
+  return out;
+}
+
+type ProposalViewLike = {
+  id: string;
+  kind: "refund" | "payout_investigation";
+  order_refs: readonly string[];
+  amount_cents: number;
+  reason: string;
+  status: "proposed" | "executed" | "rejected";
+  result?: { by: string; payment_ref?: string; detail?: string };
+};
+
+type AbuseReportViewLike = { report_id: string; category: string; moderation_ref: string };
 
 function mustTicket(support: SupportService, ticketId: string): Ticket {
   const t = support.getTicket(ticketId);

@@ -458,6 +458,59 @@ export class SupportService {
     return updated;
   }
 
+  // phase 4: proposal bridge primitives. money never moves here:
+  // these append the audit events and leave ticket state untouched.
+  public logProposalCreated(
+    ticketId: string,
+    agentId: string,
+    proposal: { id: string; kind: "refund" | "payout_investigation"; order_refs: readonly string[]; amount_cents: number; reason: string },
+    now: string,
+  ): void {
+    const t = this.mustTicket(ticketId);
+    this.ticketLog.append(t.id, (seq) => ({
+      ticket_ref: t.id,
+      seq,
+      type: "proposal_created",
+      actor: agentActor(agentId),
+      payload: { ...proposal },
+      created_at: now,
+    }));
+  }
+
+  public logProposalResult(
+    ticketId: string,
+    proposalId: string,
+    result: { status: "executed" | "rejected"; by: string; payment_ref?: string; detail?: string },
+    now: string,
+  ): void {
+    const t = this.mustTicket(ticketId);
+    this.ticketLog.append(t.id, (seq) => ({
+      ticket_ref: t.id,
+      seq,
+      type: "proposal_result",
+      actor: system(), // result.by stays in the payload as the payments actor
+      payload: { proposal_id: proposalId, ...result },
+      created_at: now,
+    }));
+  }
+
+  public logAbuseReportFiled(
+    ticketId: string,
+    agentId: string,
+    report: { report_id: string; category: string; evidence_refs: readonly string[]; moderation_ref: string },
+    now: string,
+  ): void {
+    const t = this.mustTicket(ticketId);
+    this.ticketLog.append(t.id, (seq) => ({
+      ticket_ref: t.id,
+      seq,
+      type: "abuse_report_filed",
+      actor: agentActor(agentId),
+      payload: { ...report, signal_only: true },
+      created_at: now,
+    }));
+  }
+
   // ---- reads ----
 
   public getCase(id: string): Case | undefined {
