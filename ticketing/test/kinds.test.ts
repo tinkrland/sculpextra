@@ -258,3 +258,44 @@ test("questions get no order/escrow/payout panels in the workspace view", () => 
   const sview = buildTicketView(support, seg.ticket.id, at(5));
   assert.equal(sview.order_segments.length, 1);
 });
+
+test("retag re-derives kind + subject and logs both events", () => {
+  const { support } = mkIntake();
+  const out = support.receiveContact(
+    contact({ account_family: "creator", account_ref: "cin_2", intent_tag: "payout_issue", order_attached: false }),
+    T0,
+  );
+  if (out.kind !== "ticketed") throw new Error("expected ticketed");
+  const ticketId = out.ticket.id;
+
+  // payout → idv: subject moves, kind stays an issue (the confound pair)
+  const idv = support.retag(ticketId, "agent_1", "idv_rejected", "payout blocked on idv hold", at(1));
+  assert.equal(idv.subject, "idv");
+  assert.equal(idv.kind, "support_issue");
+  assert.equal(support.getCase(out.case.id)?.intent_tag, "idv_rejected");
+  const retagEvents = support.caseEvents(out.case.id).filter((e) => e.type === "intent_retagged");
+  assert.equal(retagEvents.length, 1);
+  const p = retagEvents[0].payload as { from: string; to: string; subject_to: string };
+  assert.equal(p.from, "payout_issue");
+  assert.equal(p.to, "idv_rejected");
+  assert.equal(p.subject_to, "idv");
+  // kind did not flip: no kind_corrected event
+  assert.equal(support.ticketEvents(ticketId).filter((e) => e.type === "kind_corrected").length, 0);
+
+  // tag to a question tag: kind flips and emits its own event
+  const q = support.retag(ticketId, "agent_1", "how_to", "actually a how-to question", at(2));
+  assert.equal(q.kind, "question");
+  assert.equal(q.subject, null); // questions carry no subject
+  assert.equal(support.ticketEvents(ticketId).filter((e) => e.type === "kind_corrected").length, 1);
+  // and back to an issue: subject re-derives from the corrected tag
+  const back = support.retag(ticketId, "agent_1", "payout_issue", "no, payout again", at(3));
+  assert.equal(back.kind, "support_issue");
+  assert.equal(back.subject, "payout");
+  // queue follows the corrected tag (assignment stays pure)
+  assert.equal(support.getTicket(ticketId)?.queue, "creator_support");
+
+  // guards: same tag, cross-family tag, empty reason
+  assert.throws(() => support.retag(ticketId, "agent_1", "payout_issue", "", at(4)));
+  assert.throws(() => support.retag(ticketId, "agent_1", "where_is_it", "buyer tag", at(5)));
+  assert.throws(() => support.retag(ticketId, "agent_1", "payout_issue", "same tag", at(6)));
+});

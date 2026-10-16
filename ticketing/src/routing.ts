@@ -3,6 +3,7 @@ import type { CoreConfig } from "./config";
 import { DEFAULT_CONFIG } from "./config";
 import type { SupportService } from "./support";
 import { deepFreeze } from "./events";
+import { effectiveCap } from "./burst";
 
 // the phase 3 routing service. routing keys are (queue, market,
 // language); tickets route to agents assigned to that exact set,
@@ -65,7 +66,7 @@ export class RoutingService {
       market: this.caseOf(t).market,
       language: this.caseOf(t).language,
     };
-    const eligible = this.eligibleAgents(key);
+    const eligible = this.eligibleAgents(key, now);
     if (eligible.length === 0) return null;
 
     const cursorKey = `${key.queue}|${key.market}|${key.language}`;
@@ -93,14 +94,18 @@ export class RoutingService {
     return Object.freeze(assigned);
   }
 
-  private eligibleAgents(key: RoutingKey): readonly AgentProfile[] {
+  // caps widen during live spike windows (phase 5): the burst
+  // multiplier applies here and nowhere else - priority rules
+  // never change.
+  private eligibleAgents(key: RoutingKey, now: string): readonly AgentProfile[] {
     const out: AgentProfile[] = [];
     for (const agent of this.agents.values()) {
       const handlesKey = agent.handles.some(
         (h) => h.queue === key.queue && h.market === key.market && h.language === key.language,
       );
       if (!handlesKey) continue;
-      const cap = agent.concurrency_cap ?? this.config.agent_concurrency[key.queue];
+      const baseCap = agent.concurrency_cap ?? this.config.agent_concurrency[key.queue];
+      const cap = effectiveCap(baseCap, this.config, key.queue, now);
       const active = this.support
         .ticketsOfAgent(agent.id)
         .filter((t) => OPEN_TICKET_STATES.has(t.state)).length;

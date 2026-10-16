@@ -6,6 +6,24 @@ import { deepFreeze } from "./events";
 // burst multipliers and spike windows land in phase 5 and will extend
 // this object, not replace it.
 
+// phase 5: burst mode. spike windows are utc "HH:MM" ranges (they
+// may wrap midnight) narrowed by optional weekdays_utc (0 = sunday)
+// and days_of_month (e.g. [15] for a payout-day burst on creator
+// queues, drop windows for buyer queues - spec examples). the
+// multiplier applies to concurrency caps only: priority rules
+// never change.
+export interface SpikeWindow {
+  start_utc: string;
+  end_utc: string;
+  weekdays_utc?: readonly number[];
+  days_of_month?: readonly number[];
+}
+
+export interface BurstConfig {
+  multiplier: number; // 1 = burst off
+  windows: readonly SpikeWindow[];
+}
+
 export interface CoreConfig {
   // per-account ticket rate limits per queue per day
   rate_limits: Record<QueueId, number>;
@@ -34,6 +52,11 @@ export interface CoreConfig {
   // phase 3: hosts that count as doc/kb/academy content links for the
   // response library. a canned answer must reference at least one.
   content_link_hosts: readonly string[];
+  // phase 5: burst mode per queue. off by default (multiplier 1,
+  // no windows): spike windows are a config change, not a code
+  // change - e.g. the 15th for creator queues, drop windows for
+  // buyer queues.
+  burst: Record<QueueId, BurstConfig>;
 }
 
 export const DEFAULT_CONFIG: Readonly<CoreConfig> = deepFreeze({
@@ -63,4 +86,10 @@ export const DEFAULT_CONFIG: Readonly<CoreConfig> = deepFreeze({
   },
   priority_curve: [{ after_minutes: 0, per_minute: 1 }],
   content_link_hosts: ["docs.sculptura.com", "kb.sculptura.com", "academy.sculptura.com"],
+  burst: {
+    buyer: { multiplier: 1, windows: [] },
+    buyer_to_be: { multiplier: 1, windows: [] },
+    creator_support: { multiplier: 1, windows: [] },
+    creator_question: { multiplier: 1, windows: [] },
+  },
 });

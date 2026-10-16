@@ -21,6 +21,7 @@ import { assertLanguage, assertMarket } from "./iso3166";
 import {
   isIntentTagForFamily,
   isTicketableKind,
+  issueSubjectOf,
   kindOf,
   subjectOf,
 } from "./taxonomy";
@@ -458,15 +459,81 @@ export class SupportService {
   public correctKind(ticketId: string, actorId: string, kind: TicketKind, now: string): Ticket {
     const t = this.mustTicket(ticketId);
     if (t.kind === kind) throw new Error("kind correction equals current kind");
+    // the kind and subject axes stay consistent: a question carries
+    // no subject; an issue carries its derived subject. the map
+    // lookup is unfiltered here: the tag may still be a question tag
+    // (triage corrects the kind first, the tag after), and the
+    // payout/idv confound is measured from retags, not from kind
+    // corrections.
+    const c = this.ticketCase(ticketId);
+    const subject = kind === "question" ? null : issueSubjectOf(c.account_family, c.intent_tag);
     this.ticketLog.append(t.id, (seq) => ({
       ticket_ref: t.id,
       seq,
       type: "kind_corrected",
       actor: agentActor(actorId),
-      payload: { from: t.kind, to: kind },
+      payload: { from: t.kind, to: kind, subject_from: t.subject, subject_to: subject },
       created_at: now,
     }));
-    const updated = deepFreeze(structuredClone({ ...t, kind }));
+    const updated = deepFreeze(structuredClone({ ...t, kind, subject }));
+    this.tickets.set(t.id, updated);
+    return updated;
+  }
+
+  // re-tag: the triage correction of the classification input. the
+  // intent tag is a case property, so the event lands on the case;
+  // kind and subject re-derive from the corrected tag (a question
+  // tag carries no subject), and a kind flip emits its own
+  // kind_corrected event so the kind-correction rate stays honest.
+  // the payout/idv confound rate is measured from exactly these
+  // events (spec: measurement).
+  public retag(
+    ticketId: string,
+    actorId: string,
+    intentTag: string,
+    reason: string,
+    now: string,
+  ): Ticket {
+    const t = this.mustTicket(ticketId);
+    if (!reason.trim()) throw new Error("retag needs a reason");
+    const c = this.ticketCase(ticketId);
+    if (c.intent_tag === intentTag) throw new Error("retag equals current tag");
+    if (!isIntentTagForFamily(c.account_family, intentTag)) {
+      throw new AssignmentError(
+        `intent tag "${intentTag}" is not valid for family "${c.account_family}"`,
+      );
+    }
+    const kind = kindOf({ account_family: c.account_family, intent_tag: intentTag }) as TicketKind;
+    const subject = kind === "question" ? null : subjectOf(c.account_family, intentTag);
+    this.caseLog.append(c.id, (seq) => ({
+      case_ref: c.id,
+      seq,
+      type: "intent_retagged",
+      actor: agentActor(actorId),
+      payload: {
+        from: c.intent_tag,
+        to: intentTag,
+        subject_from: t.subject,
+        subject_to: subject,
+        kind_from: t.kind,
+        kind_to: kind,
+        reason,
+      },
+      created_at: now,
+    }));
+    const updatedCase = deepFreeze(structuredClone({ ...c, intent_tag: intentTag }));
+    this.cases.set(c.id, updatedCase);
+    if (kind !== t.kind) {
+      this.ticketLog.append(t.id, (seq) => ({
+        ticket_ref: t.id,
+        seq,
+        type: "kind_corrected",
+        actor: agentActor(actorId),
+        payload: { from: t.kind, to: kind, subject_from: t.subject, subject_to: subject },
+        created_at: now,
+      }));
+    }
+    const updated = deepFreeze(structuredClone({ ...t, kind, subject }));
     this.tickets.set(t.id, updated);
     return updated;
   }
@@ -602,6 +669,16 @@ export class SupportService {
     return priorityScore(t.created_at, now);
   }
 
+  // phase 5: read-only enumeration for the measurement job, which
+  // aggregates from events only. frozen copies; nothing mutates.
+  public ticketIds(): readonly string[] {
+    return Object.freeze([...this.tickets.keys()]);
+  }
+
+  public caseIds(): readonly string[] {
+    return Object.freeze([...this.cases.keys()]);
+  }
+
   public caseCount(): number {
     return this.cases.size;
   }
@@ -677,6 +754,7 @@ export class SupportService {
         type: "rate_limited",
         actor: system(),
         payload: {
+          account_ref: c.account_ref,
           queue: decision.queue,
           limit: this.config.rate_limits[decision.queue],
         },

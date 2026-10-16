@@ -96,11 +96,18 @@ const BUYER_SUBJECTS: ReadonlyMap<string, IssueSubject> = new Map([
   ["other", "other"],
 ]);
 
+// the subject map without the question filter: used when kind is
+// explicitly issue (a corrected kind), where the tag may still be a
+// question tag until triage re-tags it.
+export function issueSubjectOf(family: AccountFamily, intentTag: string): IssueSubject {
+  const map = family === "buyer" ? BUYER_SUBJECTS : CREATOR_SUBJECTS;
+  return map.get(intentTag) ?? "other";
+}
+
 export function subjectOf(family: AccountFamily, intentTag: string): IssueSubject | null {
   // questions carry no subject: the axis is for issues only
   if (QUESTION_TAGS.has(intentTag)) return null;
-  const map = family === "buyer" ? BUYER_SUBJECTS : CREATOR_SUBJECTS;
-  return map.get(intentTag) ?? "other";
+  return issueSubjectOf(family, intentTag);
 }
 
 // kind derivation at intake. an explicitly declared kind wins;

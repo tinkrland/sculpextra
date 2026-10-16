@@ -11,6 +11,7 @@ export type CaseEventType =
   | "case_created"
   | "gate_verdict"
   | "intent_tagged"
+  | "intent_retagged"
   | "rate_limited"
   | "ticketed"
   | "merged"
