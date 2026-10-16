@@ -3,6 +3,12 @@
 
 
 these ticket queues w human response lookup can be divided into a different few branches
+
+and not everything is a ticket: intake forks on contact kind before
+the queues — support issue, question, bug report (receipt + signal to
+the engineering tracker), vulnerability disclosure (the sensitive lane,
+own channel, access-restricted), feature request (receipt + signal to
+the product backlog). only issues and questions ever become tickets.
 - buyer queue (has already purchased)
 - buyer-to-be queue (facing issues placing an order)
 - creator queue (support) vs creator queue (question)

@@ -168,6 +168,55 @@ creator:
 free intake maps to exactly one tag; unmappable goes to `other` and
 triage re-tags. re-taging emits an event (input to misrate accounting).
 
+### 3.1 contact kinds (the fork before the queues)
+
+owner ruling 2026-10-16: a creator account issue is its own thing,
+different from a bug report, different from a vulnerability
+disclosure, different from a feature request — and all of them are
+different from support demand. kind is classified at intake
+(`kind_declared` event, raw text preserved), correctable by logged
+event and measured like queue misroutes. the fork runs before queue
+assignment: only two kinds ever produce tickets.
+
+1. `support_issue` — in scope, the four queues. account issues are
+   issues, not questions: `account_access` / account status tags
+   route to the issue queues (buyer by order attachment; creator to
+   creator_support — see §4 note). account-blocking counts like
+   money-adjacent for routing: something must be done, not
+   answered.
+2. `question` — the query queues (buyer-to-be questions,
+   creator_question). how-to and clarification stay out of the issue
+   queues; a question queue is not an issue queue in either
+   direction.
+3. `bug_report` — a product defect, not support demand. receipt
+   record + status view (received → triaged → filed | duplicate),
+   routed to the engineering tracker as a signal: support never
+   claims a fix, a timeline, or a verdict on the defect. duplicate
+   merge against open reports. an agent who spots a defect mid-ticket
+   files the same receipt from the ticket, linked, and the ticket
+   proceeds independently.
+4. `vulnerability_disclosure` — the sensitive lane, under the
+   security disclosure policy (separate doc). dedicated channel
+   (config); anything arriving on a normal channel that classifies
+   as a disclosure is re-routed with a templated ack, and the
+   record never enters shared queue views or public measurement
+   beyond counts. access-restricted from receipt; no case, no
+   ticket, no cross-link to the reporter's other records.
+5. `feature_request` — product feedback. receipt + signal to the
+   product backlog, no human queue burn; duplicates merge into a
+   demand counter the product system owns. acks never imply
+   roadmap promises.
+
+not everything is a ticket, made literal: kinds 3-5 get receipt
+records with a small lifecycle (new → acknowledged → routed →
+closed), retention consent, a status view, and a port to their
+owning system (engineering tracker, security response, product
+backlog) — the case/ticket machinery never sees them, and no
+receipt kind fires any queue, routing, or priority behavior.
+receipt records are append-only events like everything else.
+gates (email eligibility, rate limits) run identically for all
+kinds; kind never softens or hardens a gate.
+
 ## 4. queue assignment (the pure function)
 
 ```
@@ -179,10 +228,18 @@ assign(family, order_attached, intent_tag):
   # creator
   if order_attached
      or payout_context_present
-     or intent_tag in money_adjacent_set:
+     or intent_tag in money_adjacent_set
+     or intent_tag in account_issue_set:
       return CREATOR_SUPPORT
   return CREATOR_QUESTION
 ```
+
+owner ruling 2026-10-16: creator account issues (access, status,
+verification) are issues, not questions — `account_issue_set` widens
+creator_support to account-blocking matters even with no order or
+payout context attached. buyer account issues stay pure: they route
+by order attachment (buyer if purchased, buyer-to-be if the issue
+blocks them from purchasing).
 
 notes:
 - `order_attached` is a property of the contact, not the account: a buyer
@@ -237,8 +294,11 @@ event. no silent edits, no event mutation, no agent deletes.
 1. contact arrives → case row + `case_created` immediately. email runs
    the themailtell eligibility gate **before** the case is admitted; a
    failed gate is an intake rejection with the reason surfaced, no case.
-2. normalizer resolves family + bin/cin, market, language, intent tag
-   (`intent_tagged` event, raw text preserved).
+2. normalizer resolves family + bin/cin, market, language, contact
+   kind, intent tag (`intent_kind_declared`, `intent_tagged` events,
+   raw text preserved). kinds other than support_issue/question get
+   their receipt record and leave the case path here (§3.1);
+   vulnerability disclosures never enter it at all.
 3. gates run per contact shape: phone line-type verification state
    (thephonetell) and address-shape verdict (thelocaletell; the po-box
    ban lives there) attach as `gate_verdict` context, never as blockers
@@ -297,6 +357,9 @@ moderation ref for later joining.
   target; time to resolve; reopen rate (14-day window).
 - misroute rate: queue re-assignment events / total tickets, by intent
   tag. the assignment log makes this exact.
+- contact-kind share and kind-correction rate (is the fork legible?);
+  bug reports filed vs. received; disclosure ack time; feature-request
+  duplicate demand. all from kind events only.
 - duplicate merge rate, rate-limit trips per account (abuse signal to
   moderation if patterned), burst-window latency vs normal.
 
@@ -306,7 +369,9 @@ moderation ref for later joining.
    assignment function (unit-tested against the taxonomy), append-only
    enforcement.
 2. **intake + deflection.** channel adapters, gates behind interfaces,
-   retelldb lookup + deflection screen, offer logging. straight-to-
+   the contact-kind fork (§3.1: receipt records + routing signals for
+   bug reports, disclosures, feature requests), retelldb lookup +
+   deflection screen, offer logging. straight-to-
    ticket mode until deflection content exists.
 3. **routing + workspace.** agent profiles, round-robin, caps,
    priority, workspace panels, response library with link validation.
