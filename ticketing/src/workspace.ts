@@ -78,10 +78,15 @@ export function buildTicketView(
   return deepFreeze(
     structuredClone({
       ticket: t,
+      kind: t.kind,
+      subject: t.subject,
       identity,
-      order_refs: t.order_refs,
-      order_segments: t.order_segments,
-      payout: t.payout_snapshot,
+      // questions get no order/escrow/payout panels (owner ruling
+      // 2026-10-16): the kind axis drives workspace treatment, not
+      // queues. issues keep the full panels.
+      order_refs: t.kind === "question" ? [] : t.order_refs,
+      order_segments: t.kind === "question" ? [] : t.order_segments,
+      payout: t.kind === "question" ? null : t.payout_snapshot,
       deflection_history: history,
       drafts,
       proposals: proposalViews(ticketEvents),

@@ -32,15 +32,25 @@ test("a buyer asking about a failed new checkout lands in buyer_to_be", () => {
   assert.equal(d.queue, "buyer_to_be");
 });
 
-test("creator money-adjacent tags route to creator_support with no order", () => {
-  for (const tag of ["payout_issue", "listing_release_problem", "order_fulfillment", "refund_dispute"]) {
+test("creator money-adjacent, idv, and account-blocking tags route to creator_support with no order", () => {
+  // owner ruling 2026-10-16: idv gates payouts (sits beside payout
+  // issues), and creator account issues are issues, not questions.
+  for (const tag of [
+    "payout_issue",
+    "listing_release_problem",
+    "order_fulfillment",
+    "refund_dispute",
+    "idv_pending",
+    "idv_rejected",
+    "account_access",
+  ]) {
     const d = assignQueue(inputs({ account_family: "creator", intent_tag: tag }));
     assert.equal(d.queue, "creator_support", `tag ${tag}`);
   }
 });
 
 test("creator how-to tags with nothing money-adjacent route to creator_question", () => {
-  for (const tag of ["how_to", "clarification", "account_access", "other"]) {
+  for (const tag of ["how_to", "clarification", "other"]) {
     const d = assignQueue(inputs({ account_family: "creator", intent_tag: tag }));
     assert.equal(d.queue, "creator_question", `tag ${tag}`);
   }

@@ -5,6 +5,98 @@
 
 export type AccountFamily = "buyer" | "creator";
 export type QueueId = "buyer" | "buyer_to_be" | "creator_support" | "creator_question";
+
+// ---- contact kinds: the fork before the queues (owner ruling
+// 2026-10-16). kind is family-orthogonal: creators and buyers can
+// both have questions or issues; bug reports, vulnerability
+// disclosures, and feature requests are not tickets at all - they
+// get receipt records and routing signals to their owning systems.
+export type ContactKind =
+  | "support_issue"
+  | "question"
+  | "bug_report"
+  | "vulnerability_disclosure"
+  | "feature_request";
+
+// only these two kinds ever produce cases and tickets
+export type TicketKind = "support_issue" | "question";
+
+// what an issue is with respect to. recorded on the assignment
+// event; never changes routing - a measurement and workspace axis
+export type IssueSubject =
+  | "payout"
+  | "idv"
+  | "listing_release"
+  | "fulfillment"
+  | "account"
+  | "order"
+  | "checkout"
+  | "other";
+
+// receipt ports: the owning systems of the non-ticket kinds. the
+// core never claims a fix, a timeline, or a roadmap promise; it
+// routes the record and logs the routing ref.
+export interface BugReportSubmission {
+  receipt_id: string;
+  account_ref: string;
+  market: string;
+  language: string;
+  source_channel: string;
+  subject: string;
+  body: string;
+}
+export interface EngineeringTrackerPort {
+  // returns the tracker-side ref for the status view
+  fileBugReport(report: BugReportSubmission): string;
+}
+export interface DisclosureSubmission {
+  receipt_id: string;
+  market: string;
+  language: string;
+  source_channel: string;
+  subject: string;
+  body: string;
+  // NOTE: no account cross-link. disclosure records never join to
+  // the reporter's other records.
+}
+export interface SecurityResponsePort {
+  // returns the security-side ack ref
+  fileDisclosure(report: DisclosureSubmission): string;
+}
+export interface FeatureRequestSubmission {
+  receipt_id: string;
+  account_ref: string;
+  market: string;
+  language: string;
+  source_channel: string;
+  subject: string;
+  body: string;
+}
+export interface ProductBacklogPort {
+  // returns the backlog-side ref
+  fileFeatureRequest(request: FeatureRequestSubmission): string;
+}
+
+// the receipt record for non-ticket kinds: a small lifecycle
+// (new -> acknowledged -> routed -> closed), append-only events,
+// status view. never a case, never a ticket, never a queue input.
+export type ReceiptStatus = "new" | "acknowledged" | "routed" | "closed";
+
+export interface ContactReceipt {
+  id: string;
+  kind: "bug_report" | "vulnerability_disclosure" | "feature_request";
+  account_ref: string | null; // null for disclosures: no cross-link
+  market: string;
+  language: string;
+  source_channel: string;
+  subject: string;
+  body: string;
+  status: ReceiptStatus;
+  routing_ref: string | null; // the owning system's ref
+  demand_count: number; // feature requests: duplicates counted, never promised
+  duplicate_count: number;
+  created_at: string;
+}
 export type SourceChannel = "web_form" | "in_app" | "email";
 
 export type CaseState = "open" | "ticketed" | "deflected" | "rate_limited" | "merged";
@@ -118,6 +210,8 @@ export interface DeflectionHistoryItem {
 
 export interface TicketView {
   ticket: Ticket;
+  kind: TicketKind;
+  subject: IssueSubject | null; // issues only; null for questions
   identity: IdentityPanel;
   order_refs: readonly string[];
   order_segments: readonly OrderSegmentSnapshot[];
@@ -243,6 +337,7 @@ export interface Case {
   body: string;
   intent_tag_raw: string;
   intent_tag: string; // fixed taxonomy, see taxonomy.ts
+  kind: TicketKind; // family-orthogonal axis, logged at intake
   state: CaseState;
   merged_into_ticket: string | null;
   created_at: string; // iso 8601 utc
@@ -265,6 +360,8 @@ export interface Ticket {
   id: string;
   case_ref: string;
   queue: QueueId;
+  kind: TicketKind; // family-orthogonal, logged at intake
+  subject: IssueSubject | null; // issues only; null for questions
   state: TicketState;
   order_refs: readonly string[]; // 0..n: multi-store checkout spans n orders
   order_segments: readonly OrderSegmentSnapshot[]; // escrow state frozen per segment

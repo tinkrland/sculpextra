@@ -29,6 +29,7 @@ export type TicketEventType =
   | "response_sent"
   | "merged_contact"
   | "escalated"
+  | "kind_corrected"
   | "reopened"
   | "closed"
   // phase 4, proposal bridge + abuse signal:

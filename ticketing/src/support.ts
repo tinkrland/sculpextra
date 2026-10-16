@@ -3,20 +3,27 @@ import type {
   AssignmentDecision,
   AssignmentInputs,
   Case,
+  ContactKind,
+  ContentLink,
   DeflectionScreen,
   GateVerdict,
   OrderSegmentSnapshot,
   PayoutSnapshot,
   QueueId,
   RetellLookup,
-  SuggestedAnswer,
   SourceChannel,
-  ContentLink,
+  SuggestedAnswer,
   Ticket,
+  TicketKind,
   TicketState,
 } from "./types";
 import { assertLanguage, assertMarket } from "./iso3166";
-import { isIntentTagForFamily } from "./taxonomy";
+import {
+  isIntentTagForFamily,
+  isTicketableKind,
+  kindOf,
+  subjectOf,
+} from "./taxonomy";
 import {
   Actor,
   CaseEvent,
@@ -48,6 +55,11 @@ export interface ContactInput {
   body: string;
   intent_tag: string; // fixed taxonomy; free text goes in intent_tag_raw
   intent_tag_raw?: string;
+  // contact kind, declared at intake (owner ruling 2026-10-16).
+  // absent: derived from the intent tag (how-to/clarification/listing
+  // questions are questions). non-ticketable kinds fork to the
+  // receipt book before any case exists.
+  kind?: ContactKind;
   order_attached: boolean; // property of the contact, not the account
   payout_context_present?: boolean; // captured at intake, an input to assign
   order_refs?: string[];
@@ -440,6 +452,25 @@ export class SupportService {
     return updated;
   }
 
+  // kind correction (owner ruling 2026-10-16): the question/issue
+  // axis is logged at intake and correctable by logged event, so the
+  // kind-correction rate is measurable like queue misroutes.
+  public correctKind(ticketId: string, actorId: string, kind: TicketKind, now: string): Ticket {
+    const t = this.mustTicket(ticketId);
+    if (t.kind === kind) throw new Error("kind correction equals current kind");
+    this.ticketLog.append(t.id, (seq) => ({
+      ticket_ref: t.id,
+      seq,
+      type: "kind_corrected",
+      actor: agentActor(actorId),
+      payload: { from: t.kind, to: kind },
+      created_at: now,
+    }));
+    const updated = deepFreeze(structuredClone({ ...t, kind }));
+    this.tickets.set(t.id, updated);
+    return updated;
+  }
+
   // triage correction: the queue change that makes misroute rate
   // measurable per intent tag. reason is mandatory.
   public requeue(ticketId: string, actorId: string, queue: QueueId, reason: string, now: string): Ticket {
@@ -620,6 +651,16 @@ export class SupportService {
         `intent tag "${input.intent_tag}" is not valid for family "${input.account_family}"`,
       );
     }
+    // the kind fork runs before a case exists: bug reports, disclosures,
+    // and feature requests are receipts, never cases or tickets. the
+    // intake facade routes them to the receipt book; reaching this
+    // path with one is a wiring bug, so it fails loudly.
+    const kind = kindOf(input);
+    if (!isTicketableKind(kind)) {
+      throw new AssignmentError(
+        `contact kind "${kind}" is not ticketable: it belongs on the receipt path`,
+      );
+    }
 
     const c = this.createCase(input, now);
     const decision = assignQueue({
@@ -724,6 +765,7 @@ export class SupportService {
       body: input.body,
       intent_tag_raw: input.intent_tag_raw ?? input.intent_tag,
       intent_tag: input.intent_tag,
+      kind: kindOf(input) as TicketKind,
       state: "open",
       merged_into_ticket: null,
       created_at: now,
@@ -771,10 +813,14 @@ export class SupportService {
       throw new Error("payout snapshot is creator_support only");
     }
     const id = `ticket_${++this.ticketSeq}`;
+    const kind = kindOf(input) as TicketKind;
+    const subject = subjectOf(input.account_family, input.intent_tag);
     const t: Ticket = deepFreeze({
       id,
       case_ref: c.id,
       queue: decision.queue,
+      kind,
+      subject,
       state: "new",
       order_refs: Object.freeze([...(input.order_refs ?? [])]),
       order_segments: Object.freeze(
@@ -808,6 +854,8 @@ export class SupportService {
         queue: decision.queue,
         rule: decision.rule,
         assignment_inputs: decision.inputs,
+        kind,
+        subject,
         reopened_from: reopenedFrom,
       },
       created_at: now,

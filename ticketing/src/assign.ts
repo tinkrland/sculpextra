@@ -3,7 +3,12 @@ import type {
   AssignmentInputs,
   QueueId,
 } from "./types";
-import { CREATOR_MONEY_ADJACENT_TAGS, isIntentTagForFamily } from "./taxonomy";
+import {
+  CREATOR_ACCOUNT_ISSUE_TAGS,
+  CREATOR_IDV_TAGS,
+  CREATOR_MONEY_ADJACENT_TAGS,
+  isIntentTagForFamily,
+} from "./taxonomy";
 import { deepFreeze } from "./events";
 
 // the pure queue assignment function. a function of (account family,
@@ -28,16 +33,21 @@ export function assignQueue(inputs: AssignmentInputs): AssignmentDecision {
       : { queue: "buyer_to_be", rule: "buyer + no order attached", inputs: frozen };
   }
 
-  // creator: anything money-adjacent routes to creator_support.
-  // order attachment is a property of the contact, not the account.
-  const moneyAdjacent =
+  // creator: anything money-adjacent, idv-gated, or account-blocking
+  // routes to creator_support. order attachment is a property of the
+  // contact, not the account. idv sits beside payout (it gates
+  // payouts) and account issues are issues, not questions (owner
+  // rulings 2026-10-16).
+  const needsSupport =
     inputs.order_attached ||
     inputs.payout_context_present ||
-    CREATOR_MONEY_ADJACENT_TAGS.has(inputs.intent_tag);
-  return moneyAdjacent
+    CREATOR_MONEY_ADJACENT_TAGS.has(inputs.intent_tag) ||
+    CREATOR_IDV_TAGS.has(inputs.intent_tag) ||
+    CREATOR_ACCOUNT_ISSUE_TAGS.has(inputs.intent_tag);
+  return needsSupport
     ? {
         queue: "creator_support",
-        rule: "creator + order or payout context or money-adjacent tag",
+        rule: "creator + order/payout context, money-adjacent, idv, or account-blocking tag",
         inputs: frozen,
       }
     : {
