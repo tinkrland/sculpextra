@@ -34,6 +34,19 @@ and some other things that will exist that happen first, not everything is a tic
   process, build phases; companion system to ticketing (external
   claims only; platform-artist theft stays paracraft-side; the
   public entry forks question vs claim — a question is not a claim)
+- `dispute/` — the outside-artist art-theft dispute system
+  (spec: `specs/dispute-build-spec.md`, `specs/dispute-architecture.md`):
+  event-sourced claims with the question fork at entry, the
+  completeness gate (bounce exactly once), on-demand evidence
+  artifacts (signals never verdicts), provisional measures from the
+  stashed provisional_default config slot, the statute-versioned
+  dmca counter-notice loop, signed decision records as the only
+  enforcement mover, the policy-gated bad-faith registry, counsel
+  clock pauses, and the measurement job from events only. all 12
+  acceptance criteria tested; 21/21 green. the delist vs
+  notify-only ruling remains stashed (§14.1): both postures are
+  built and tested; the shipped default is notify_only until the
+  owner rules.
 - `ticketing/` — phases 1-5 complete, plus the contact-kind fork:
   bug reports, vulnerability disclosures, and feature requests are
   receipt records with routing signals (never tickets); kind and

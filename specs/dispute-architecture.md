@@ -410,6 +410,12 @@ value, never a code path.
   false-positive harm to responding creators at the cost of
   exposure. the ruling, its date, and rationale are recorded with
   the config commit.
+- implementation status (2026-10-16, stashed per owner
+  instruction): both postures are built and fully tested; the
+  shipped default is `notify_only` until the ruling lands, and a
+  human can still apply a provisional delist manually
+  (signature-gated). flipping the default is a one-line config
+  change.
 
 ### 14.2 queue + limits
 - per-reviewer caps, review set assignments, rate limits per
