@@ -69,7 +69,7 @@ const mkService = (opts = {}) => {
     strict_1.default.equal(p.provenance_shortcut, true);
 });
 (0, node_test_1.test)("3: stripped signatures throw: decisions, delists, restores, registry", () => {
-    const { claims, registry } = mkService({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const { claims, registry } = mkService({ config: (0, helpers_1.delistAll)() });
     const out = claims.fileClaim((0, helpers_1.mkClaim)(), helpers_1.T0);
     if (out.kind !== "filed")
         throw new Error("expected filed");
@@ -82,7 +82,7 @@ const mkService = (opts = {}) => {
     strict_1.default.equal(registry.size(), 0);
 });
 (0, node_test_1.test)("4: provisional delist and restoration are both first-class events with port refs", () => {
-    const { claims, marketplace } = mkService({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const { claims, marketplace } = mkService({ config: (0, helpers_1.delistAll)() });
     const out = claims.fileClaim((0, helpers_1.mkClaim)(), helpers_1.T0);
     if (out.kind !== "filed")
         throw new Error("expected filed");
@@ -101,7 +101,7 @@ const mkService = (opts = {}) => {
     strict_1.default.ok(!marketplace.delisted.has("listing_a1"));
 });
 (0, node_test_1.test)("5: no dispute state ever changes a fee, trust, or ranking value", () => {
-    const { claims, registry, inquiries, marketplace, config } = mkService({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const { claims, registry, inquiries, marketplace, config } = mkService({ config: (0, helpers_1.delistAll)() });
     // a snapshot of every creator economic value the platform holds
     const creatorEconomics = Object.freeze({
         creator_fees: { "cin_9": { rate: 0.12, balance_cents: 152000 } },
@@ -155,7 +155,7 @@ const mkService = (opts = {}) => {
     strict_1.default.equal(parsed.items[0].status, "under_review");
 });
 (0, node_test_1.test)("7: the export rebuilds from events: volume, substantiation, time-to-decision, hours", () => {
-    const svc = mkService({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const svc = mkService({ config: (0, helpers_1.delistAll)() });
     const { claims, inquiries, config, marketplace } = svc;
     const out = claims.fileClaim((0, helpers_1.mkClaim)(), helpers_1.T0);
     if (out.kind !== "filed")
@@ -192,7 +192,7 @@ const mkService = (opts = {}) => {
     strict_1.default.equal(claims.claimIds().length, 3); // bounced + resubmission + merged submission record
 });
 (0, node_test_1.test)("9: counter-notice restore fires only after the window; refile pauses and escalates", () => {
-    const { claims } = mkService({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const { claims } = mkService({ config: (0, helpers_1.delistAll)() });
     const out = claims.fileClaim((0, helpers_1.mkClaim)(), helpers_1.T0);
     if (out.kind !== "filed")
         throw new Error("expected filed");
@@ -266,7 +266,7 @@ const mkService = (opts = {}) => {
     strict_1.default.ok(!claimEvents.some((e) => e.type === "decision_recorded"));
 });
 (0, node_test_1.test)("12: reclassified claim closes as closed_referred, excluded, no enforcement", () => {
-    const svc = mkService({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const svc = mkService({ config: (0, helpers_1.delistAll)() });
     const { claims, inquiries, config, marketplace } = svc;
     const out = claims.fileClaim((0, helpers_1.mkClaim)(), helpers_1.T0);
     if (out.kind !== "filed")

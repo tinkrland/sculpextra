@@ -24,6 +24,13 @@ export const configWith = (over: Partial<DisputeConfig>): DisputeConfig => ({
   ...over,
 });
 
+// tests that want takedown posture for both classes (the shipped
+// ruling delists legal notices; this flips individuals too)
+export const delistAll = (): DisputeConfig =>
+  configWith({
+    provisional_default: { individual_artist: "delist", legal_notice: "delist" },
+  });
+
 export const fullAttestation = {
   perjury_acknowledged: true,
   authorized_to_act: true,

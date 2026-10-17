@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.mkContent = exports.mkEvidencePorts = exports.FakeContactGate = exports.FakeMarketplace = exports.mkClaim = exports.fullAttestation = exports.configWith = exports.day = exports.at = exports.T0 = void 0;
+exports.mkContent = exports.mkEvidencePorts = exports.FakeContactGate = exports.FakeMarketplace = exports.mkClaim = exports.fullAttestation = exports.delistAll = exports.configWith = exports.day = exports.at = exports.T0 = void 0;
 const config_1 = require("../src/config");
 exports.T0 = "2026-10-16T00:00:00.000Z";
 const at = (minutes) => new Date(Date.parse(exports.T0) + minutes * 60_000).toISOString();
@@ -12,6 +12,12 @@ const configWith = (over) => ({
     ...over,
 });
 exports.configWith = configWith;
+// tests that want takedown posture for both classes (the shipped
+// ruling delists legal notices; this flips individuals too)
+const delistAll = () => (0, exports.configWith)({
+    provisional_default: { individual_artist: "delist", legal_notice: "delist" },
+});
+exports.delistAll = delistAll;
 exports.fullAttestation = {
     perjury_acknowledged: true,
     authorized_to_act: true,

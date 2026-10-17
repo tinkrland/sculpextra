@@ -800,10 +800,13 @@ class DisputeService {
             this.setItem(item.id, now, (it) => ({ ...it, provisional: "notify_only" }));
             return;
         }
-        // a legal-notice claim's provisional posture is counsel-owned:
-        // the stashed default never auto-applies delist to it (§3.1);
-        // a human applies the measure, signed
-        if (this.config.provisional_default === "delist" && this.mustClaim(item.claim_ref).claimant_class !== "legal_notice") {
+        // the ruled split default (§14.1): legal notices delist on a
+        // facially complete filing (redbubble-style); individual
+        // artists get notify_only pending review. the class-keyed
+        // config is the only difference - same reversible, logged,
+        // creator-notified measure either way.
+        const posture = this.config.provisional_default[this.mustClaim(item.claim_ref).claimant_class];
+        if (posture === "delist") {
             const portRef = this.marketplace.delist(item.listing_ref, item.id);
             this.log.append(item.claim_ref, (seq) => ({
                 claim_ref: item.claim_ref,
@@ -821,7 +824,13 @@ class DisputeService {
                 seq,
                 type: "provisional_notify_only",
                 actor: system,
-                payload: { item_ref: item.id, listing_ref: item.listing_ref, default: true },
+                payload: {
+                    item_ref: item.id,
+                    listing_ref: item.listing_ref,
+                    default: true,
+                    posture,
+                    claimant_class: this.mustClaim(item.claim_ref).claimant_class,
+                },
                 created_at: now,
             }));
             this.setItem(item.id, now, (it) => ({ ...it, provisional: "notify_only" }));

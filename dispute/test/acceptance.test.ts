@@ -13,6 +13,7 @@ import {
   at,
   configWith,
   day,
+  delistAll,
   mkClaim,
   mkContent,
   mkEvidencePorts,
@@ -85,7 +86,7 @@ test("2: the template-provenance shortcut attaches the provenance explanation", 
 });
 
 test("3: stripped signatures throw: decisions, delists, restores, registry", () => {
-  const { claims, registry } = mkService({ config: configWith({ provisional_default: "delist" }) });
+  const { claims, registry } = mkService({ config: delistAll() });
   const out = claims.fileClaim(mkClaim(), T0);
   if (out.kind !== "filed") throw new Error("expected filed");
   const itemId = out.claim.items[0];
@@ -98,7 +99,7 @@ test("3: stripped signatures throw: decisions, delists, restores, registry", () 
 });
 
 test("4: provisional delist and restoration are both first-class events with port refs", () => {
-  const { claims, marketplace } = mkService({ config: configWith({ provisional_default: "delist" }) });
+  const { claims, marketplace } = mkService({ config: delistAll() });
   const out = claims.fileClaim(mkClaim(), T0);
   if (out.kind !== "filed") throw new Error("expected filed");
   const itemId = out.claim.items[0];
@@ -118,7 +119,7 @@ test("4: provisional delist and restoration are both first-class events with por
 });
 
 test("5: no dispute state ever changes a fee, trust, or ranking value", () => {
-  const { claims, registry, inquiries, marketplace, config } = mkService({ config: configWith({ provisional_default: "delist" }) });
+  const { claims, registry, inquiries, marketplace, config } = mkService({ config: delistAll() });
   // a snapshot of every creator economic value the platform holds
   const creatorEconomics = Object.freeze({
     creator_fees: { "cin_9": { rate: 0.12, balance_cents: 152000 } },
@@ -172,7 +173,7 @@ test("6: claimants see status only; no creator personal or financial data", () =
 });
 
 test("7: the export rebuilds from events: volume, substantiation, time-to-decision, hours", () => {
-  const svc = mkService({ config: configWith({ provisional_default: "delist" }) });
+  const svc = mkService({ config: delistAll() });
   const { claims, inquiries, config, marketplace } = svc;
   const out = claims.fileClaim(mkClaim(), T0);
   if (out.kind !== "filed") throw new Error("expected filed");
@@ -210,7 +211,7 @@ test("8: bounced resubmission links; duplicates merge, never double-review", () 
 });
 
 test("9: counter-notice restore fires only after the window; refile pauses and escalates", () => {
-  const { claims } = mkService({ config: configWith({ provisional_default: "delist" }) });
+  const { claims } = mkService({ config: delistAll() });
   const out = claims.fileClaim(mkClaim(), T0);
   if (out.kind !== "filed") throw new Error("expected filed");
   const itemId = out.claim.items[0];
@@ -289,7 +290,7 @@ test("11: a question never creates a claim record, measure, decision, or registr
 });
 
 test("12: reclassified claim closes as closed_referred, excluded, no enforcement", () => {
-  const svc = mkService({ config: configWith({ provisional_default: "delist" }) });
+  const svc = mkService({ config: delistAll() });
   const { claims, inquiries, config, marketplace } = svc;
   const out = claims.fileClaim(mkClaim(), T0);
   if (out.kind !== "filed") throw new Error("expected filed");

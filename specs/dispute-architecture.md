@@ -144,9 +144,10 @@ per claim:
   deadline) is the primary artifact; the response deadline is a
   caller-owned timer surfaced as a chip - its expiry never fires
   anything, it only warns. provisional posture on a legal-notice
-  claim is counsel-owned: the stashed provisional_default never
-  auto-applies delist to a legal-notice claim - a human applies
-  it, signed.
+  claim follows the §14.1 ruling: a facially complete notice
+  naming a listing takes it down on intake (redbubble-style:
+  reversible, logged, creator notified), with review owned by the
+  counsel-facing set.
 - both classes file through the same claim record type and the
   same completeness gate (with the legal-notice block replacing
   the good-faith attestation elements with the notice elements);
@@ -332,12 +333,12 @@ configurable per port and feed the measurement job.
 ## 8. provisional measures branch
 
 - a facially complete claim naming a listing triggers the
-  configured **provisional default**: `delist` (search + storefront,
-  reversible, logged, creator notified with the claim summary) or
-  `notify_only` (creator notified, listing stays up pending
-  review). **owner ruling needed** (see §14.1): the default is
-  config, either posture is buildable, and the ruling is recorded as
-  a config decision with its rationale.
+  configured **provisional default, per claimant class (the §14.1
+  ruling)**: legal_notice claims delist (search + storefront,
+  reversible, logged, creator notified with the notice summary -
+  the redbubble posture); individual_artist claims get notify_only
+  (creator notified, listing stays up pending the review the
+  artist asked for).
 - delist and restore are first-class events with marketplace port
   refs both directions; restoration is logged as loudly as
   application (invariant 5).
@@ -443,19 +444,22 @@ events.
 like ticketing: one frozen config object; every rule below is a
 value, never a code path.
 
-### 14.1 owner-ruling slot: provisional default
-- `provisional_default: "delist" | "notify_only"` — pending owner
-  ruling. delist default matches dmca-safe-harbor posture on
-  facially complete claims; notify-only default reduces
-  false-positive harm to responding creators at the cost of
-  exposure. the ruling, its date, and rationale are recorded with
-  the config commit.
-- implementation status (2026-10-16, stashed per owner
-  instruction): both postures are built and fully tested; the
-  shipped default is `notify_only` until the ruling lands, and a
-  human can still apply a provisional delist manually
-  (signature-gated). flipping the default is a one-line config
-  change.
+### 14.1 owner ruling (recorded 2026-10-17): split provisional default
+
+- ruled by the owner, with rationale: a large studio's cease and
+  desist is **informing** us - sculptura acts redbubble-style: a
+  facially complete notice naming a listing takes it down (delist
+  from search and storefront, reversible, logged, creator
+  notified with the notice summary, statutory counter-notice
+  window exposed). an outside artist filing a claim is **asking us
+  for a review** - the listing stays up (notify_only) pending
+  that review; no auto-delist on an unreviewed artist's word.
+- config: `provisional_default: { individual_artist: "notify_only",
+  legal_notice: "delist" }` - per claimant class (§3.1), a
+  one-line config change to revisit.
+- either posture remains fully built and tested for both classes;
+  manual delist/restore stays available and signature-gated for
+  reviewers and counsel on any claim.
 
 ### 14.2 queue + limits
 - per-reviewer caps, review set assignments, rate limits per

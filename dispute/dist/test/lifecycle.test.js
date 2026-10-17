@@ -71,7 +71,7 @@ const mkAll = (opts = {}) => {
     strict_1.default.equal(svc.claims.claim(c4.claim.id).state, "under_review");
 });
 (0, node_test_1.test)("multi-listing claim: per-item measures, mixed outcomes, closes on last decision", () => {
-    const svc = mkAll({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const svc = mkAll({ config: (0, helpers_1.delistAll)() });
     const out = svc.claims.fileClaim((0, helpers_1.mkClaim)({ items: [{ listing_ref: "m1" }, { listing_ref: "m2" }, { listing_ref: "m3" }] }), helpers_1.T0);
     if (out.kind !== "filed")
         throw new Error("expected filed");
@@ -97,7 +97,7 @@ const mkAll = (opts = {}) => {
     void i2;
 });
 (0, node_test_1.test)("a claim against an already-delisted listing needs no provisional measure", () => {
-    const svc = mkAll({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    const svc = mkAll({ config: (0, helpers_1.delistAll)() });
     svc.marketplace.delisted.add("already_gone");
     const out = svc.claims.fileClaim((0, helpers_1.mkClaim)({ items: [{ listing_ref: "already_gone" }] }), helpers_1.T0);
     if (out.kind !== "filed")
@@ -221,8 +221,8 @@ const mkAll = (opts = {}) => {
         throw new Error("expected filed");
     strict_1.default.equal(svc.review.assignClaim(de.claim.id, (0, helpers_1.at)(5)), null);
 });
-(0, node_test_1.test)("a studio cease-and-desist is a legal_notice claim: counsel from intake, no auto-delist, separate measurement", () => {
-    const svc = mkAll({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+(0, node_test_1.test)("a studio cease-and-desist is a legal_notice claim: takedown on intake (ruled), counsel review, separate measurement", () => {
+    const svc = mkAll(); // the shipped ruling: legal notices delist, individuals notify
     svc.review.addReviewer({
         id: "rev_std",
         counsel: false,
@@ -254,38 +254,62 @@ const mkAll = (opts = {}) => {
     const claim = studio.claim;
     strict_1.default.equal(claim.claimant_class, "legal_notice");
     strict_1.default.equal(claim.legal_notice?.notice_ref, "C&D-2026-114");
-    // the stashed delist default never auto-applies to a legal notice:
-    // counsel owns the provisional posture, a human applies it signed
-    strict_1.default.equal(svc.marketplace.delisted.has("studio_case"), false);
-    strict_1.default.ok(!svc.claims.claimEvents(claim.id).some((e) => e.type === "provisional_delisted"));
-    // and the standard reviewer set is skipped: counsel from intake
+    // the ruling (14.1): a facially complete notice naming a
+    // listing takes it down on intake, redbubble-style - reversible,
+    // logged, creator notified
+    strict_1.default.equal(svc.marketplace.delisted.has("studio_case"), true);
+    const delistEv = svc.claims.claimEvents(claim.id).find((e) => e.type === "provisional_delisted");
+    const dp = delistEv?.payload;
+    strict_1.default.ok(dp.port_ref.startsWith("mp_delist_"));
+    strict_1.default.ok(svc.claims.claimEvents(claim.id).some((e) => e.type === "creator_notified"));
+    // an individual artist in the same window stays up: review posture
+    const solo = svc.claims.fileClaim((0, helpers_1.mkClaim)({ items: [{ listing_ref: "solo_stays_up" }] }), (0, helpers_1.at)(1));
+    if (solo.kind !== "filed")
+        throw new Error("expected filed");
+    strict_1.default.equal(svc.marketplace.delisted.has("solo_stays_up"), false);
+    strict_1.default.ok(svc.claims.claimEvents(solo.claim.id).some((e) => e.type === "provisional_notify_only"));
+    // and the standard reviewer set is skipped for the notice: counsel from intake
     strict_1.default.equal(svc.review.assignClaim(claim.id, (0, helpers_1.at)(1)), "counsel_triage");
     // the response deadline is a chip in the reviewer view, never a trigger
     const view = svc.claims.reviewerView(claim.id);
     strict_1.default.equal(view.counsel_triage, true);
     strict_1.default.equal(view.legal_notice.response_deadline, (0, helpers_1.day)(10));
-    // counsel applies the provisional delist manually, signed
+    // counsel upholds: the delist stands, the counter-notice window
+    // is exposed, and the ladder is fed exactly like an individual
+    // claim's - same signed record, same enforcement event
     const itemId = claim.items[0];
-    svc.claims.manualDelist(claim.id, itemId, "counsel_triage", "sig:counsel:cd-response", (0, helpers_1.at)(2));
-    strict_1.default.ok(svc.marketplace.delisted.has("studio_case"));
-    // an upheld studio decision feeds the ladder exactly like an
-    // individual claim's: same signed record, same enforcement event
     svc.claims.requestEvidence(claim.id, itemId, "similarity_report", "counsel_triage", (0, helpers_1.at)(3));
     const decision = svc.claims.decideItem(claim.id, itemId, "upheld", "the listing reproduces the noticed work", "counsel_triage", "sig:counsel:upheld", (0, helpers_1.at)(4));
     strict_1.default.ok(svc.claims.claimEvents(claim.id).some((e) => e.type === "enforcement_step_signed"));
     strict_1.default.ok(decision.signature.includes("counsel"));
-    // measurement splits by class: the studio claim is its own line
-    const individual = svc.claims.fileClaim((0, helpers_1.mkClaim)({ items: [{ listing_ref: "solo_case" }] }), (0, helpers_1.at)(5));
+    strict_1.default.equal(svc.claims.item(itemId).overlay, "upheld_pending_counter");
+    // a rejected notice restores as loudly as it delisted
+    const notice2 = svc.claims.fileClaim((0, helpers_1.mkClaim)({
+        claimant_class: "legal_notice",
+        claimant: { ...(0, helpers_1.mkClaim)().claimant, contact_value: "counsel2@meridian.example", name: "Meridian Studio 2" },
+        legal_notice: { notice_ref: "C&D-2026-115", representation: "Feld & Associates" },
+        items: [{ listing_ref: "studio_case_2" }],
+    }), (0, helpers_1.at)(5));
+    if (notice2.kind !== "filed")
+        throw new Error("expected filed");
+    const item2 = notice2.claim.items[0];
+    strict_1.default.ok(svc.marketplace.delisted.has("studio_case_2")); // ruled takedown
+    svc.claims.requestEvidence(notice2.claim.id, item2, "similarity_report", "counsel_triage", (0, helpers_1.at)(6));
+    svc.claims.decideItem(notice2.claim.id, item2, "rejected", "the claim names the wrong design", "counsel_triage", "sig:counsel:rej", (0, helpers_1.at)(7));
+    strict_1.default.equal(svc.marketplace.delisted.has("studio_case_2"), false);
+    strict_1.default.ok(svc.claims.claimEvents(notice2.claim.id).some((e) => e.type === "provisional_restored"));
+    // measurement splits by class: studio notices and artist claims
+    // never muddy each other's numbers
+    const individual = svc.claims.fileClaim((0, helpers_1.mkClaim)({ items: [{ listing_ref: "solo_case" }] }), (0, helpers_1.at)(8));
     if (individual.kind !== "filed")
         throw new Error("expected filed");
-    svc.claims.requestEvidence(individual.claim.id, individual.claim.items[0], "provenance_lookup", "rev_1", (0, helpers_1.at)(6));
-    svc.claims.decideItem(individual.claim.id, individual.claim.items[0], "rejected", "house template", "rev_1", "sig:1", (0, helpers_1.at)(7), { provenance_shortcut: true });
+    svc.claims.requestEvidence(individual.claim.id, individual.claim.items[0], "provenance_lookup", "rev_1", (0, helpers_1.at)(9));
+    svc.claims.decideItem(individual.claim.id, individual.claim.items[0], "rejected", "house template", "rev_1", "sig:1", (0, helpers_1.at)(10), { provenance_shortcut: true });
     const report = (0, measure_1.measure)(svc.claims, svc.inquiries, svc.config, svc.marketplace.listingCount(), helpers_1.T0, (0, helpers_1.day)(2));
-    strict_1.default.equal(report.by_class.legal_notice.claim_volume, 1);
-    strict_1.default.equal(report.by_class.legal_notice.substantiation_rate, 1);
-    strict_1.default.equal(report.by_class.individual_artist.claim_volume, 1);
-    strict_1.default.equal(report.by_class.individual_artist.substantiation_rate, 0);
-    strict_1.default.equal(report.claim_volume, 2); // blended stays available
+    strict_1.default.equal(report.by_class.legal_notice.claim_volume, 2);
+    strict_1.default.equal(report.by_class.legal_notice.substantiation_rate, 0.5); // one upheld, one rejected
+    strict_1.default.equal(report.by_class.individual_artist.claim_volume, 2); // solo_stays_up + solo_case
+    strict_1.default.equal(report.claim_volume, 4); // blended stays available
 });
 (0, node_test_1.test)("a legal notice without its required elements bounces with the notice-specific list", () => {
     const svc = mkAll();

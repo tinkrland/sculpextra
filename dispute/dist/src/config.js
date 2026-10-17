@@ -8,7 +8,10 @@ exports.DEFAULT_CONFIG = Object.freeze({
         "trademark_or_publicity",
         "other_ip",
     ],
-    provisional_default: "notify_only",
+    provisional_default: {
+        individual_artist: "notify_only",
+        legal_notice: "delist",
+    },
     statute_version: "dmca_us_17_usc_512_g_2026",
     counter_notice_window_days: 10,
     restore_window_days: 14,

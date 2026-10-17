@@ -10,14 +10,18 @@ export interface DisputeConfig {
   // silently corrected.
   claim_types: readonly ClaimType[];
 
-  // §14.1 OWNER-RULING SLOT (STASHED per owner instruction
-  // 2026-10-16): the provisional default for a facially complete
-  // claim naming a listing. either posture is buildable and fully
-  // tested; the ruling is recorded with the config commit when it
-  // lands. until then the shipped default is notify_only (no
-  // automatic delist without the ruling; a human can still apply a
-  // provisional delist manually, which is signature-gated).
-  provisional_default: "delist" | "notify_only";
+  // §14.1 OWNER RULING (recorded 2026-10-17, per owner
+  // instruction): a split provisional default by claimant class.
+  // a large studio's C&D is informing us, not asking for a review:
+  // a facially complete notice naming a listing takes it down,
+  // redbubble-style (dmca safe-harbor posture: reversible, logged,
+  // creator notified, counter-notice window per statute). an
+  // outside artist filing a claim is asking us to review it:
+  // notify_only pending the review - no auto-delist on their word.
+  provisional_default: {
+    individual_artist: "delist" | "notify_only";
+    legal_notice: "delist" | "notify_only";
+  };
 
   // dmca statutory parameters, statute-versioned: a statute bump
   // is a config change + counsel review, not a code change (§9).
@@ -59,7 +63,10 @@ export const DEFAULT_CONFIG: DisputeConfig = Object.freeze({
     "trademark_or_publicity",
     "other_ip",
   ] as readonly ClaimType[],
-  provisional_default: "notify_only",
+  provisional_default: {
+    individual_artist: "notify_only" as const,
+    legal_notice: "delist" as const,
+  },
   statute_version: "dmca_us_17_usc_512_g_2026",
   counter_notice_window_days: 10,
   restore_window_days: 14,
