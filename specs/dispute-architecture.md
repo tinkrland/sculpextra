@@ -123,17 +123,56 @@ misrouting between ip_infringement and license_violation is
 measured like ticketing misroutes: type correction events / total
 claims, by intake type.
 
+### 3.1 claimant class (orthogonal to claim type)
+
+who is filing, and through what channel, changes the posture - the
+tessa-style case (an individual artist claiming a listed design
+copies their work) is a different animal from a large studio's
+cease-and-desist letter. the class axis is logged at intake and
+drives routing and measurement; the claim types stay exactly one
+per claim:
+
+- **individual_artist**: a person claiming their own work. the
+  educational screen and template-provenance shortcut exist for
+  them; similarity + timeline are primary evidence; the reviewer
+  view and dmca counter-notice loop apply as specified.
+- **legal_notice**: a rights holder, studio, or their counsel
+  filing through a formal legal channel (cease-and-desist,
+  takedown demand, pre-litigation letter). these route to the
+  counsel-facing review set from intake regardless of claim
+  type; the notice itself (letter ref, representation, response
+  deadline) is the primary artifact; the response deadline is a
+  caller-owned timer surfaced as a chip - its expiry never fires
+  anything, it only warns. provisional posture on a legal-notice
+  claim is counsel-owned: the stashed provisional_default never
+  auto-applies delist to a legal-notice claim - a human applies
+  it, signed.
+- both classes file through the same claim record type and the
+  same completeness gate (with the legal-notice block replacing
+  the good-faith attestation elements with the notice elements);
+  the same signed DecisionRecord is the only enforcement mover
+  for either; an upheld decision feeds the enforcement ladder
+  the same way regardless of who filed. the bad-faith registry
+  and rate limits apply to both.
+- measurement splits by class: claim volume and substantiation
+  rate are reported per class so a wave of studio notices never
+  distorts the individual-artist numbers, and vice versa.
+
 ## 4. data model
 
 all records append-only where history matters. ids opaque. every
 record carries created_at/updated_at.
 
 ### Claim (one per filed claim)
-- id, claim_type, submitted_at, locale, market (claimant-declared,
+- id, claim_type, claimant_class (individual_artist | legal_notice),
+  submitted_at, locale, market (claimant-declared,
   iso 3166-1 alpha-2, informational only)
 - claimant block: name, contact (email or post channel), statement
   of rights, good-faith attestation elements (perjury-acknowledged,
-  authorized-to-act, good-faith-belief), retention consent
+  authorized-to-act, good-faith-belief), retention consent. for
+  legal_notice claims the attestation is replaced by the notice
+  block: notice ref (letter/case id), representation (in-house or
+  firm name), response deadline if stated
 - claimed original refs: urls, image uploads, registration numbers
   if any
 - items: the specific listings claimed (see ClaimItem)
@@ -277,7 +316,8 @@ configurable per port and feed the measurement job.
   sets keyed by (claim_type, market, language), round-robin with
   per-reviewer caps, age-only priority. counsel-triage claims
   (trademark_or_publicity, other_ip) route to the counsel-facing
-  set.
+  set - and every legal_notice claim routes there from intake
+  regardless of claim type (§3.1).
 - the reviewer view shows: claimant block + attestation elements,
   claimed original refs, item cards (per listing: release history,
   provisional state, evidence refs), the full event history, and
@@ -466,9 +506,10 @@ retention_expired.
 no separate tracking pipeline to drift out of sync:
 
 - claims per 1000 listings per month (listing counts from the
-  marketplace port, volumes from events)
+  marketplace port, volumes from events), split by claimant class
 - substantiation rate: upheld items / decided items (withdrawn
-  items counted separately, never as unsubstantiated)
+  items counted separately, never as unsubstantiated), reported
+  per claimant class as well as blended
 - time from complete claim to decision, counsel pauses subtracted
   exactly (pause event pairs)
 - false-positive delists restored (provisional_delisted +

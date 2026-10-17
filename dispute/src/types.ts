@@ -12,6 +12,23 @@ export type ClaimType =
 
 export type Market = string; // iso 3166-1 alpha-2, informational only
 
+// the claimant class (§3.1): an individual artist claiming their
+// own work vs. a rights holder / studio / counsel filing through
+// a formal legal channel. orthogonal to claim type; drives
+// routing, the attestation-vs-notice intake elements, and the
+// measurement split.
+export type ClaimantClass = "individual_artist" | "legal_notice";
+
+export interface LegalNoticeBlock {
+  // the notice itself is the primary artifact: letter/case id,
+  // representation, response deadline if stated. the deadline is
+  // a caller-owned timer surfaced as a chip; expiry never fires
+  // anything - it only warns.
+  notice_ref: string;
+  representation: string;
+  response_deadline?: string;
+}
+
 // claim level state machine (§15); item outcomes live on items
 export type ClaimState =
   | "new"
@@ -64,9 +81,12 @@ export interface ClaimedOriginal {
 
 export interface ClaimInput {
   claim_type: ClaimType;
+  claimant_class: ClaimantClass; // §3.1; default individual_artist
   locale: string;
   market: Market;
   claimant: ClaimantBlock;
+  // required for legal_notice claims; ignored otherwise
+  legal_notice?: LegalNoticeBlock;
   claimed_originals: ClaimedOriginal;
   items: readonly { listing_ref: string }[];
   resubmission_of?: string;
@@ -86,6 +106,8 @@ export interface ClaimItem {
 export interface Claim {
   id: string;
   claim_type: string;
+  claimant_class: ClaimantClass;
+  legal_notice: Readonly<LegalNoticeBlock> | null;
   state: ClaimState;
   locale: string;
   market: Market;

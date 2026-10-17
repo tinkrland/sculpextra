@@ -4,6 +4,7 @@ import type {
   Claim,
   ClaimInput,
   ClaimItem,
+  ClaimantClass,
   ContactGatePort,
   CounterNotice,
   DecisionRecord,
@@ -98,9 +99,12 @@ export class DisputeService {
     const contactHash = this.hashContact(input.claimant);
     this.counter += 1;
     const id = `claim_${this.counter}`;
+    const claimantClass: ClaimantClass = input.claimant_class ?? "individual_artist";
     const base: Claim = deepFreeze({
       id,
       claim_type: input.claim_type,
+      claimant_class: claimantClass,
+      legal_notice: claimantClass === "legal_notice" ? (input.legal_notice ?? null) : null,
       state: "new",
       locale: input.locale,
       market: input.market,
@@ -119,7 +123,14 @@ export class DisputeService {
       seq,
       type: "claim_submitted",
       actor: claimantActor(contactHash),
-      payload: { claim_type: input.claim_type, market: input.market, locale: input.locale, items: input.items.map((i) => i.listing_ref) },
+      payload: {
+        claim_type: input.claim_type,
+        claimant_class: claimantClass,
+        market: input.market,
+        locale: input.locale,
+        items: input.items.map((i) => i.listing_ref),
+        response_deadline: claimantClass === "legal_notice" ? (input.legal_notice?.response_deadline ?? null) : null,
+      },
       created_at: now,
     }));
 
@@ -524,6 +535,8 @@ export class DisputeService {
     const reopened: Claim = deepFreeze({
       id,
       claim_type: old.claim_type,
+      claimant_class: old.claimant_class,
+      legal_notice: old.legal_notice,
       state: "reopened",
       locale: old.locale,
       market: old.market,
@@ -717,12 +730,15 @@ export class DisputeService {
     return deepFreeze({
       claim_id: claim.id,
       claim_type: claim.claim_type,
+      claimant_class: claim.claimant_class,
+      legal_notice: claim.legal_notice,
       state: claim.state,
       market: claim.market,
       locale: claim.locale,
       claimant: claim.claimant,
       claimed_originals: claim.claimed_originals,
-      counsel_triage: COUNSEL_TRIAGE_TYPES.has(claim.claim_type as never),
+      counsel_triage:
+        COUNSEL_TRIAGE_TYPES.has(claim.claim_type as never) || claim.claimant_class === "legal_notice",
       registry_chip: registryChip,
       items: Object.freeze(claim.items.map((id) => this.mustItem(id))),
       evidence: this.artifactsOf(claimId),
@@ -762,11 +778,20 @@ export class DisputeService {
     if (!c.name?.trim()) missing.push("claimant name");
     if (!c.contact_channel || !c.contact_value?.trim()) missing.push("claimant contact (email or post channel)");
     if (!c.statement_of_rights?.trim()) missing.push("statement of your rights in the work");
-    const a = c.attestation;
-    if (!a.perjury_acknowledged) missing.push("perjury acknowledgment");
-    if (!a.authorized_to_act) missing.push("authorization to act");
-    if (!a.good_faith_belief) missing.push("good-faith belief statement");
-    if (!a.retention_consent) missing.push("acceptance that the claim record is retained in-platform");
+    const claimantClass: ClaimantClass = input.claimant_class ?? "individual_artist";
+    if (claimantClass === "legal_notice") {
+      // the notice elements replace the good-faith attestation for a
+      // formal legal filing (§3.1): the letter itself is the artifact
+      const n = input.legal_notice;
+      if (!n?.notice_ref?.trim()) missing.push("legal notice reference (letter or case id)");
+      if (!n?.representation?.trim()) missing.push("representation (rights holder or firm)");
+    } else {
+      const a = c.attestation;
+      if (!a.perjury_acknowledged) missing.push("perjury acknowledgment");
+      if (!a.authorized_to_act) missing.push("authorization to act");
+      if (!a.good_faith_belief) missing.push("good-faith belief statement");
+      if (!a.retention_consent) missing.push("acceptance that the claim record is retained in-platform");
+    }
     const o = input.claimed_originals;
     const hasOriginal = (o.urls?.length ?? 0) + (o.image_refs?.length ?? 0) + (o.registration_numbers?.length ?? 0) > 0;
     if (!hasOriginal) missing.push("identification of the claimed original work (links, images, or registration)");
@@ -824,7 +849,10 @@ export class DisputeService {
       this.setItem(item.id, now, (it) => ({ ...it, provisional: "notify_only" }));
       return;
     }
-    if (this.config.provisional_default === "delist") {
+    // a legal-notice claim's provisional posture is counsel-owned:
+    // the stashed default never auto-applies delist to it (§3.1);
+    // a human applies the measure, signed
+    if (this.config.provisional_default === "delist" && this.mustClaim(item.claim_ref).claimant_class !== "legal_notice") {
       const portRef = this.marketplace.delist(item.listing_ref, item.id);
       this.log.append(item.claim_ref, (seq) => ({
         claim_ref: item.claim_ref,

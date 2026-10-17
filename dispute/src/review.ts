@@ -1,4 +1,5 @@
 import type { Claim } from "./types";
+import { ClaimantClass } from "./types";
 import type { DisputeConfig } from "./config";
 import { COUNSEL_TRIAGE_TYPES } from "./config";
 import { deepFreeze } from "./events";
@@ -47,7 +48,10 @@ export class ReviewQueue {
     if (!OPEN_STATES.has(claim.state)) {
       throw new ReviewError(`claim ${claimId} is ${claim.state}, not open for review`);
     }
-    const counsel = COUNSEL_TRIAGE_TYPES.has(claim.claim_type as never);
+    // counsel triage: the type set, plus every legal_notice claim
+    // regardless of type (§3.1)
+    const counsel =
+      COUNSEL_TRIAGE_TYPES.has(claim.claim_type as never) || claim.claimant_class === "legal_notice";
     const eligible = [...this.reviewers.values()].filter((r) => {
       if (r.counsel !== counsel) return false;
       if (!r.handles.some(

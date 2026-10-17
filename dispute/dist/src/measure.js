@@ -14,6 +14,9 @@ function measure(claims, inquiries, config, listingCount, from, to) {
         throw new Error("measurement window is empty");
     const inW = (ts) => ts >= from && ts < to;
     let filedSubmissions = 0;
+    const classVolumes = { individual_artist: 0, legal_notice: 0 };
+    const classDecided = { individual_artist: 0, legal_notice: 0 };
+    const classUpheld = { individual_artist: 0, legal_notice: 0 };
     let reachedReview = 0;
     let bounced = 0;
     let merged = 0;
@@ -48,8 +51,10 @@ function measure(claims, inquiries, config, listingCount, from, to) {
                 if (claim.state !== "bounced")
                     resubmittedFiled += 1;
             }
-            if (claim.state !== "bounced")
+            if (claim.state !== "bounced") {
                 reachedReview += 1;
+                classVolumes[claim.claimant_class] += 1;
+            }
         }
         // per-item accounting from events
         const itemIds = claim.items;
@@ -58,10 +63,14 @@ function measure(claims, inquiries, config, listingCount, from, to) {
             if (!item)
                 continue;
             const decidedEvent = [...events].reverse().find((e) => e.type === "decision_recorded" && e.payload.item_ref === itemId);
-            if (item.outcome === "rejected" || item.outcome === "upheld")
+            if (item.outcome === "rejected" || item.outcome === "upheld") {
                 decided += 1;
-            if (item.outcome === "upheld")
+                classDecided[claim.claimant_class] += 1;
+            }
+            if (item.outcome === "upheld") {
                 upheld += 1;
+                classUpheld[claim.claimant_class] += 1;
+            }
             if (item.outcome === "escalated")
                 escalated += 1;
             if (item.outcome === "withdrawn")
@@ -132,6 +141,16 @@ function measure(claims, inquiries, config, listingCount, from, to) {
         from,
         to,
         claim_volume: reachedReview,
+        by_class: {
+            individual_artist: {
+                claim_volume: classVolumes.individual_artist,
+                substantiation_rate: classDecided.individual_artist > 0 ? classUpheld.individual_artist / classDecided.individual_artist : null,
+            },
+            legal_notice: {
+                claim_volume: classVolumes.legal_notice,
+                substantiation_rate: classDecided.legal_notice > 0 ? classUpheld.legal_notice / classDecided.legal_notice : null,
+            },
+        },
         filed_submissions: filedSubmissions,
         bounced,
         bounce_rate: filedSubmissions > 0 ? bounced / filedSubmissions : null,

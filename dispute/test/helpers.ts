@@ -33,6 +33,7 @@ export const fullAttestation = {
 
 export const mkClaim = (over: Partial<ClaimInput> = {}): ClaimInput => ({
   claim_type: "ip_infringement",
+  claimant_class: "individual_artist",
   locale: "en-US",
   market: "US",
   claimant: {

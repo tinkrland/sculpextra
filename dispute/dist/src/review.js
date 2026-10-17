@@ -42,7 +42,9 @@ class ReviewQueue {
         if (!OPEN_STATES.has(claim.state)) {
             throw new ReviewError(`claim ${claimId} is ${claim.state}, not open for review`);
         }
-        const counsel = config_1.COUNSEL_TRIAGE_TYPES.has(claim.claim_type);
+        // counsel triage: the type set, plus every legal_notice claim
+        // regardless of type (§3.1)
+        const counsel = config_1.COUNSEL_TRIAGE_TYPES.has(claim.claim_type) || claim.claimant_class === "legal_notice";
         const eligible = [...this.reviewers.values()].filter((r) => {
             if (r.counsel !== counsel)
                 return false;

@@ -221,3 +221,81 @@ const mkAll = (opts = {}) => {
         throw new Error("expected filed");
     strict_1.default.equal(svc.review.assignClaim(de.claim.id, (0, helpers_1.at)(5)), null);
 });
+(0, node_test_1.test)("a studio cease-and-desist is a legal_notice claim: counsel from intake, no auto-delist, separate measurement", () => {
+    const svc = mkAll({ config: (0, helpers_1.configWith)({ provisional_default: "delist" }) });
+    svc.review.addReviewer({
+        id: "rev_std",
+        counsel: false,
+        handles: [{ claim_type: "ip_infringement", market: "US", language: "en-US" }],
+    });
+    svc.review.addReviewer({
+        id: "counsel_triage",
+        counsel: true,
+        handles: [{ claim_type: "ip_infringement", market: "US", language: "en-US" }],
+    });
+    const studio = svc.claims.fileClaim((0, helpers_1.mkClaim)({
+        claimant_class: "legal_notice",
+        claimant: {
+            name: "Meridian Studio",
+            contact_channel: "email",
+            contact_value: "counsel@meridian.example",
+            statement_of_rights: "Meridian holds the copyright in the referenced work",
+            attestation: helpers_1.fullAttestation, // ignored for legal notices
+        },
+        legal_notice: {
+            notice_ref: "C&D-2026-114",
+            representation: "Feld & Associates",
+            response_deadline: (0, helpers_1.day)(10),
+        },
+        items: [{ listing_ref: "studio_case" }],
+    }), helpers_1.T0);
+    if (studio.kind !== "filed")
+        throw new Error("expected filed");
+    const claim = studio.claim;
+    strict_1.default.equal(claim.claimant_class, "legal_notice");
+    strict_1.default.equal(claim.legal_notice?.notice_ref, "C&D-2026-114");
+    // the stashed delist default never auto-applies to a legal notice:
+    // counsel owns the provisional posture, a human applies it signed
+    strict_1.default.equal(svc.marketplace.delisted.has("studio_case"), false);
+    strict_1.default.ok(!svc.claims.claimEvents(claim.id).some((e) => e.type === "provisional_delisted"));
+    // and the standard reviewer set is skipped: counsel from intake
+    strict_1.default.equal(svc.review.assignClaim(claim.id, (0, helpers_1.at)(1)), "counsel_triage");
+    // the response deadline is a chip in the reviewer view, never a trigger
+    const view = svc.claims.reviewerView(claim.id);
+    strict_1.default.equal(view.counsel_triage, true);
+    strict_1.default.equal(view.legal_notice.response_deadline, (0, helpers_1.day)(10));
+    // counsel applies the provisional delist manually, signed
+    const itemId = claim.items[0];
+    svc.claims.manualDelist(claim.id, itemId, "counsel_triage", "sig:counsel:cd-response", (0, helpers_1.at)(2));
+    strict_1.default.ok(svc.marketplace.delisted.has("studio_case"));
+    // an upheld studio decision feeds the ladder exactly like an
+    // individual claim's: same signed record, same enforcement event
+    svc.claims.requestEvidence(claim.id, itemId, "similarity_report", "counsel_triage", (0, helpers_1.at)(3));
+    const decision = svc.claims.decideItem(claim.id, itemId, "upheld", "the listing reproduces the noticed work", "counsel_triage", "sig:counsel:upheld", (0, helpers_1.at)(4));
+    strict_1.default.ok(svc.claims.claimEvents(claim.id).some((e) => e.type === "enforcement_step_signed"));
+    strict_1.default.ok(decision.signature.includes("counsel"));
+    // measurement splits by class: the studio claim is its own line
+    const individual = svc.claims.fileClaim((0, helpers_1.mkClaim)({ items: [{ listing_ref: "solo_case" }] }), (0, helpers_1.at)(5));
+    if (individual.kind !== "filed")
+        throw new Error("expected filed");
+    svc.claims.requestEvidence(individual.claim.id, individual.claim.items[0], "provenance_lookup", "rev_1", (0, helpers_1.at)(6));
+    svc.claims.decideItem(individual.claim.id, individual.claim.items[0], "rejected", "house template", "rev_1", "sig:1", (0, helpers_1.at)(7), { provenance_shortcut: true });
+    const report = (0, measure_1.measure)(svc.claims, svc.inquiries, svc.config, svc.marketplace.listingCount(), helpers_1.T0, (0, helpers_1.day)(2));
+    strict_1.default.equal(report.by_class.legal_notice.claim_volume, 1);
+    strict_1.default.equal(report.by_class.legal_notice.substantiation_rate, 1);
+    strict_1.default.equal(report.by_class.individual_artist.claim_volume, 1);
+    strict_1.default.equal(report.by_class.individual_artist.substantiation_rate, 0);
+    strict_1.default.equal(report.claim_volume, 2); // blended stays available
+});
+(0, node_test_1.test)("a legal notice without its required elements bounces with the notice-specific list", () => {
+    const svc = mkAll();
+    const out = svc.claims.fileClaim((0, helpers_1.mkClaim)({ claimant_class: "legal_notice", legal_notice: { notice_ref: "", representation: "" } }), helpers_1.T0);
+    strict_1.default.equal(out.kind, "bounced");
+    if (out.kind === "bounced") {
+        strict_1.default.ok(out.missing.some((m) => m.includes("legal notice reference")));
+        strict_1.default.ok(out.missing.some((m) => m.includes("representation")));
+        // the attestation elements are NOT demanded of a legal notice
+        strict_1.default.ok(!out.missing.some((m) => m.includes("perjury")));
+        strict_1.default.ok(!out.missing.some((m) => m.includes("retained in-platform")));
+    }
+});

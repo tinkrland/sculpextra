@@ -43,10 +43,14 @@ and some other things that will exist that happen first, not everything is a tic
   dmca counter-notice loop, signed decision records as the only
   enforcement mover, the policy-gated bad-faith registry, counsel
   clock pauses, and the measurement job from events only. all 12
-  acceptance criteria tested; 21/21 green. the delist vs
+  acceptance criteria tested; 23/23 green. the delist vs
   notify-only ruling remains stashed (§14.1): both postures are
   built and tested; the shipped default is notify_only until the
-  owner rules.
+  owner rules. claimant-class axis (§3.1): individual_artist vs
+  legal_notice (studio C&D) - counsel-facing from intake, notice
+  elements replace the attestation at the completeness gate, the
+  provisional default never auto-applies delist to a legal notice,
+  and measurement splits volume + substantiation by class.
 - `ticketing/` — phases 1-5 complete, plus the contact-kind fork:
   bug reports, vulnerability disclosures, and feature requests are
   receipt records with routing signals (never tickets); kind and

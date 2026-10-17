@@ -20,6 +20,7 @@ exports.fullAttestation = {
 };
 const mkClaim = (over = {}) => ({
     claim_type: "ip_infringement",
+    claimant_class: "individual_artist",
     locale: "en-US",
     market: "US",
     claimant: {
